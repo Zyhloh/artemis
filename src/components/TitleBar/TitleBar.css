@@ -1,0 +1,103 @@
+.titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--titlebar-height);
+  flex-shrink: 0;
+  z-index: 30;
+}
+
+.titlebar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--friends-width));
+  right: var(--friends-width);
+  z-index: -1;
+  background: var(--bg-surface);
+  box-shadow: inset 0 -1px 0 var(--border-subtle);
+  transform: translateX(var(--friends-width));
+  will-change: transform;
+  transition: transform var(--transition-slide);
+  pointer-events: none;
+}
+
+.titlebar--covered::before {
+  transform: translateX(0);
+}
+
+.titlebar__title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.titlebar__action {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  margin-right: 12px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: background var(--transition-fast), color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.titlebar__action:hover {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.titlebar__action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.titlebar__action:disabled:hover {
+  background: none;
+  color: var(--text-muted);
+}
+
+.titlebar__action--on {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.titlebar__spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.6px solid var(--border-strong);
+  border-top-color: var(--text-secondary);
+  animation: titlebar-spin 720ms linear infinite;
+}
+
+@keyframes titlebar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .titlebar::before,
+  .titlebar__action {
+    transition: none;
+  }
+
+  .titlebar__spinner {
+    animation-duration: 2s;
+  }
+}

@@ -1,0 +1,22 @@
+.modal__panel--busy {
+  width: 340px;
+  min-height: 160px;
+  padding: 22px 24px 18px;
+}
+
+.busy__message {
+  max-width: 260px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.busy__detail {
+  max-width: 260px;
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}

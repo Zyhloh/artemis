@@ -1,0 +1,230 @@
+.modal__panel--install {
+  width: 460px;
+  padding: 20px 20px 16px;
+  text-align: left;
+}
+
+.modal__panel--install .modal__title {
+  text-align: center;
+}
+
+.install__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 0;
+}
+
+.install__field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 18px;
+}
+
+.install__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.install__path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 4px 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+}
+
+.install__value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.install__space {
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.install__space--short {
+  color: var(--danger);
+}
+
+.install__pathtext {
+  unicode-bidi: isolate;
+  direction: ltr;
+}
+
+.install__browse {
+  height: 26px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.install__browse:hover {
+  background: var(--border-default);
+  color: var(--text-primary);
+}
+
+.install__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 188px;
+  padding-right: 4px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.install__list::-webkit-scrollbar {
+  width: 9px;
+}
+
+.install__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.install__list::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  background-clip: padding-box;
+  border: 2.5px solid transparent;
+  border-radius: 5px;
+}
+
+.install__list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: padding-box;
+}
+
+.install__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.install__option:hover {
+  background: var(--bg-hover);
+}
+
+.install__option--locked {
+  cursor: default;
+}
+
+.install__checkbox {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.install__box {
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: var(--bg-active);
+  box-shadow: inset 0 0 0 1px var(--border-default);
+  color: transparent;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.install__checkbox:checked + .install__box {
+  background: var(--accent);
+  box-shadow: none;
+  color: var(--bg-popover);
+}
+
+.install__option--locked .install__box {
+  opacity: 0.6;
+}
+
+.install__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.install__name {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.install__option:hover .install__name {
+  color: var(--text-primary);
+}
+
+.install__description {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.install__import {
+  margin-top: 14px;
+  padding: 0;
+  align-self: flex-start;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--transition-fast);
+}
+
+.install__import:hover {
+  color: var(--text-secondary);
+}
+
+.install__issue {
+  margin-top: 14px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--danger);
+}
+
+.modal__panel--install .modal__actions {
+  margin-top: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .install__option,
+  .install__box,
+  .install__browse,
+  .install__import {
+    transition: none;
+  }
+}

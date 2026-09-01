@@ -1,0 +1,76 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Artemis",
+  "version": "1.0.0",
+  "identifier": "com.zyhloh.artemis",
+  "build": {
+    "beforeDevCommand": "npm run dev:web",
+    "beforeBuildCommand": "npm run build:web",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Artemis",
+        "width": 1100,
+        "height": 700,
+        "minWidth": 940,
+        "minHeight": 620,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "center": true,
+        "visible": false,
+        "shadow": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: asset: http://asset.localhost https://cdn1.epicgames.com https://cdn2.epicgames.com https://cdn.unrealengine.com https://cdn2.unrealengine.com https://cdn.fn-api.cc; connect-src 'self' ipc: http://ipc.localhost wss://xmpp-service-prod.ol.epicgames.com https://prod.fn-api.cc https://*.epicgames.com https://*.ol.epicgames.com https://*.live.use1a.on.epicgames.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "publisher": "Zyhloh",
+    "copyright": "Copyright © 2026 Zyhloh",
+    "category": "Utility",
+    "shortDescription": "Artemis",
+    "longDescription": "Artemis desktop application.",
+    "resources": [
+      "../config.json"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false
+      }
+    },
+    "externalBin": [
+      "binaries/legendary"
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "artemis"
+        ]
+      }
+    }
+  }
+}

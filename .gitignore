@@ -141,3 +141,16 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Rust / Tauri build output
+src-tauri/target/
+src-tauri/gen/
+
+# Third-party sidecar binary, fetched during setup (see README)
+src-tauri/binaries/
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,9 @@
+{
+  "app": {
+    "name": "Artemis",
+    "version": "1.0.0"
+  },
+  "appearance": {
+    "backdrop": "acrylic"
+  }
+}

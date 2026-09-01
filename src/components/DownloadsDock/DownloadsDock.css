@@ -1,0 +1,327 @@
+.dock {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  pointer-events: none;
+  transition:
+    opacity 200ms ease 190ms,
+    transform 200ms ease 190ms,
+    visibility 0s linear 0s;
+}
+
+.dock--veiled {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(14px);
+  transition:
+    opacity 110ms ease-in 0s,
+    transform 110ms ease-in 0s,
+    visibility 0s linear 110ms;
+}
+
+.dock__toggle {
+  display: grid;
+  place-items: center;
+  position: relative;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--bg-popover);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-md);
+  color: var(--text-secondary);
+  pointer-events: auto;
+  transform: rotate(0deg);
+  will-change: transform;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.dock__toggle:hover {
+  background: var(--bg-active);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.dock__toggle--open {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--bg-popover);
+}
+
+.dock__badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  border: 2px solid var(--bg-base, #121214);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+}
+
+.dock__panel {
+  display: flex;
+  flex-direction: column;
+  width: 336px;
+  max-height: 0;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--bg-popover);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  transform: translateY(8px) scale(0.97);
+  transform-origin: bottom right;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transition: opacity var(--transition-base), transform var(--transition-base),
+    max-height var(--transition-base);
+}
+
+.dock__panel--open {
+  max-height: 320px;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.dock__head {
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 14px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dock__heading {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+.dock__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dock__list::-webkit-scrollbar {
+  width: 9px;
+}
+
+.dock__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dock__list::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  background-clip: padding-box;
+  border: 2.5px solid transparent;
+  border-radius: 5px;
+}
+
+.dock__list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: padding-box;
+}
+
+.dock__empty {
+  padding: 18px 6px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dock__job {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.dock__job:hover {
+  background: var(--bg-hover);
+}
+
+.dock__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dock__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dock__controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.dock__control {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.dock__control:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.dock__control--danger:hover {
+  color: var(--danger);
+}
+
+.dock__track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+.dock__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width var(--transition-base);
+}
+
+.dock__fill--paused {
+  background: var(--warning, #f5a623);
+}
+
+.dock__fill--failed {
+  background: var(--danger);
+}
+
+.dock__fill--done {
+  background: var(--success, #3ecf8e);
+}
+
+.dock__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dock__stage {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dock__percent {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.dock__pills {
+  display: flex;
+  gap: 6px;
+}
+
+.dock__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 21px;
+  padding: 0 8px;
+  flex: 1;
+  min-width: 0;
+  border-radius: 999px;
+  background: var(--bg-active);
+  box-shadow: var(--glass-edge);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+
+.dock__figure {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock__panel,
+  .dock__toggle,
+  .dock__job,
+  .dock__control,
+  .dock__fill {
+    transition: none;
+  }
+}
+
+.dock__track--vague {
+  position: relative;
+  overflow: hidden;
+}
+
+.dock__track--vague .dock__fill {
+  width: 34%;
+  will-change: transform;
+  animation: dock-sweep 1250ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes dock-sweep {
+  from {
+    transform: translateX(-105%);
+  }
+  to {
+    transform: translateX(295%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock,
+  .dock--veiled {
+    transition: none;
+  }
+
+  .dock__track--vague .dock__fill {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
