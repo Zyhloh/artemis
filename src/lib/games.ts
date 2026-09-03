@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { GameSession, LaunchArgs } from "@/types";
+import type { GameSession, LaunchArgs, LaunchFailure } from "@/types";
 
 const CHANGED = "game:changed";
+const FAILED = "game:failed";
 
 export const listSessions = () => invoke<GameSession[]>("game_list");
 
@@ -14,6 +15,9 @@ export const stopGame = (appName: string) =>
 
 export const watchSessions = (handler: (sessions: GameSession[]) => void) =>
   listen<GameSession[]>(CHANGED, ({ payload }) => handler(payload));
+
+export const watchLaunchFailures = (handler: (failure: LaunchFailure) => void) =>
+  listen<LaunchFailure>(FAILED, ({ payload }) => handler(payload));
 
 export const getLaunchArgs = (appName: string) =>
   invoke<LaunchArgs>("launch_args_get", { appName });

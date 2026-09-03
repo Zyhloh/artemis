@@ -210,6 +210,27 @@ export function MainWindow() {
       />
 
       <ConfirmModal
+        open={games.failure !== null}
+        title={games.failure?.outdated ? "Update required" : "Launch failed"}
+        body={
+          games.failure?.outdated
+            ? `${games.failure.appName} has an update that must be installed before it can launch.`
+            : (games.failure?.reason ?? "")
+        }
+        confirmLabel={games.failure?.outdated ? "Update Now" : "OK"}
+        cancelLabel="Not Now"
+        onConfirm={() => {
+          const target = games.failure;
+          games.dismiss();
+
+          if (target?.outdated) {
+            void downloads.start(target.appName, target.appName, "", []);
+          }
+        }}
+        onClose={games.dismiss}
+      />
+
+      <ConfirmModal
         open={cancelling !== null}
         title="Cancel download"
         body={

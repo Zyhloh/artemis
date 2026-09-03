@@ -124,6 +124,12 @@ export interface GameSession {
   stage: GameStage;
 }
 
+export interface LaunchFailure {
+  appName: string;
+  reason: string;
+  outdated: boolean;
+}
+
 export interface GameStatus {
   appName: string;
   version: string;

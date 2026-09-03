@@ -222,29 +222,46 @@ pub struct Status {
 
 #[tauri::command]
 pub async fn library_updates(handle: AppHandle) -> Result<Vec<Status>> {
-    let output = legendary::run(&handle, &["list-installed", "--check-updates", "--json"]).await?;
+    let installed = legendary::run(&handle, &["list-installed", "--json"]).await?;
 
-    if output.code != Some(0) {
-        return Err(Error::Sidecar(summarise(&output.stderr)));
+    if installed.code != Some(0) {
+        return Err(Error::Sidecar(summarise(&installed.stderr)));
     }
 
-    let entries: Vec<Value> = serde_json::from_str(&output.stdout)?;
+    let library = legendary::run(&handle, &["list", "--json"]).await?;
+
+    if library.code != Some(0) {
+        return Err(Error::Sidecar(summarise(&library.stderr)));
+    }
+
+    let entries: Vec<Value> = serde_json::from_str(&installed.stdout)?;
+    let catalogue: Vec<Value> = serde_json::from_str(&library.stdout)?;
+
+    let latest = |app_name: &str, platform: &str| -> Option<String> {
+        let game = catalogue
+            .iter()
+            .find(|game| text(game, &["app_name"]).as_deref() == Some(app_name))?;
+
+        text(game, &["asset_infos", platform, "build_version"])
+    };
 
     Ok(entries
         .iter()
         .filter(|entry| entry.get("is_dlc").and_then(Value::as_bool) != Some(true))
         .filter_map(|entry| {
+            let app_name = entry.get("app_name")?.as_str()?.to_owned();
+            let version = text(entry, &["version"]).unwrap_or_default();
+            let platform = text(entry, &["platform"]).unwrap_or_else(|| String::from("Windows"));
+            let newest = latest(&app_name, &platform);
+
             Some(Status {
-                app_name: entry.get("app_name")?.as_str()?.to_owned(),
-                version: text(entry, &["version"]).unwrap_or_default(),
-                update_available: entry
-                    .get("update_available")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
+                update_available: newest.is_some_and(|newest| newest != version),
                 install_size: entry
                     .get("install_size")
                     .and_then(Value::as_u64)
                     .unwrap_or(0),
+                app_name,
+                version,
             })
         })
         .collect())

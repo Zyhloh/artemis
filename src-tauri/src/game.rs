@@ -6,10 +6,12 @@ use std::sync::Mutex;
 use std::time::Duration;
 use sysinfo::{ProcessesToUpdate, System};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
 const EVENT: &str = "game:changed";
+const FAILED: &str = "game:failed";
+const LOG_LINES: usize = 200;
 const POLL: Duration = Duration::from_millis(1500);
 const GRACE: u32 = 80;
 const ARGS_FILE: &str = "launch.json";
@@ -158,6 +160,90 @@ fn running(system: &mut System, root: &str) -> Vec<sysinfo::Pid> {
         .collect()
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Failure {
+    app_name: String,
+    reason: String,
+    outdated: bool,
+}
+
+fn reason_of(lines: &[String]) -> String {
+    lines
+        .iter()
+        .rev()
+        .find(|line| line.contains("ERROR"))
+        .or_else(|| lines.last())
+        .map(|line| line.rsplit("ERROR:").next().unwrap_or(line).trim().to_owned())
+        .filter(|line| !line.is_empty())
+        .unwrap_or_else(|| String::from("Legendary exited before the game started"))
+}
+
+fn fail(handle: &AppHandle, app_name: &str, lines: &[String]) {
+    {
+        let games = handle.state::<Games>();
+        let mut sessions = games.sessions.lock().unwrap();
+
+        if sessions.get(app_name) != Some(&Stage::Launching) {
+            return;
+        }
+
+        sessions.remove(app_name);
+        games.children.lock().unwrap().remove(app_name);
+    }
+
+    let reason = reason_of(lines);
+    let outdated = reason.to_ascii_lowercase().contains("out of date");
+
+    publish(handle);
+
+    let _ = handle.emit(
+        FAILED,
+        Failure {
+            app_name: app_name.to_owned(),
+            reason,
+            outdated,
+        },
+    );
+}
+
+fn observe(
+    handle: AppHandle,
+    app_name: String,
+    mut stream: tauri::async_runtime::Receiver<CommandEvent>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let mut lines: Vec<String> = Vec::new();
+
+        while let Some(event) = stream.recv().await {
+            match event {
+                CommandEvent::Stdout(raw) | CommandEvent::Stderr(raw) => {
+                    for line in String::from_utf8_lossy(&raw).lines() {
+                        let line = line.trim();
+
+                        if !line.is_empty() {
+                            lines.push(line.to_owned());
+                        }
+                    }
+
+                    if lines.len() > LOG_LINES {
+                        let excess = lines.len() - LOG_LINES;
+                        lines.drain(..excess);
+                    }
+                }
+                CommandEvent::Terminated(status) => {
+                    if status.code.unwrap_or(0) != 0 {
+                        fail(&handle, &app_name, &lines);
+                    }
+
+                    break;
+                }
+                _ => {}
+            }
+        }
+    });
+}
+
 fn watch(handle: AppHandle, app_name: String, root: String) {
     tauri::async_runtime::spawn_blocking(move || {
         let mut system = System::new();
@@ -189,9 +275,16 @@ fn watch(handle: AppHandle, app_name: String, root: String) {
             }
 
             if !live && !seen {
+                let abandoned = !handle
+                    .state::<Games>()
+                    .sessions
+                    .lock()
+                    .unwrap()
+                    .contains_key(&app_name);
+
                 waited += 1;
 
-                if waited >= GRACE {
+                if abandoned || waited >= GRACE {
                     break;
                 }
             }
@@ -255,7 +348,7 @@ pub async fn game_launch(handle: AppHandle, app_name: String) -> Result<()> {
                 .spawn()
         });
 
-    let (_stream, child) = match spawned {
+    let (stream, child) = match spawned {
         Ok(pair) => pair,
         Err(error) => {
             release();
@@ -267,6 +360,8 @@ pub async fn game_launch(handle: AppHandle, app_name: String) -> Result<()> {
         let games = handle.state::<Games>();
         games.children.lock().unwrap().insert(app_name.clone(), child);
     }
+
+    observe(handle.clone(), app_name.clone(), stream);
 
     publish(&handle);
     crate::credentials::poke();

@@ -4,14 +4,26 @@ import {
   listSessions,
   pendingLaunch,
   stopGame,
+  watchLaunchFailures,
   watchLaunchRequests,
   watchSessions
 } from "@lib/games";
 import { ensureLibraryLink } from "@lib/launcher";
-import type { Account, GameSession } from "@/types";
+import type { Account, GameSession, LaunchFailure } from "@/types";
 
 export function useGames(account: Account | null) {
   const [sessions, setSessions] = useState<GameSession[]>([]);
+  const [failure, setFailure] = useState<LaunchFailure | null>(null);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    watchLaunchFailures(setFailure).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => unlisten?.();
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -75,5 +87,7 @@ export function useGames(account: Account | null) {
     void stopGame(appName);
   }, []);
 
-  return { sessions, launch, stop };
+  const dismiss = useCallback(() => setFailure(null), []);
+
+  return { sessions, launch, stop, failure, dismiss };
 }
