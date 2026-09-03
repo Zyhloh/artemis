@@ -164,7 +164,7 @@ fn program_files() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from(r"C:\Program Files (x86)"))
 }
 
-fn sanitise(name: &str) -> String {
+pub(crate) fn sanitise(name: &str) -> String {
     name.chars()
         .map(|glyph| match glyph as u32 {
             0x3c | 0x3e | 0x3a | 0x22 | 0x2f | 0x5c | 0x7c | 0x3f | 0x2a => '-',

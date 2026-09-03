@@ -59,10 +59,11 @@ export function InstallModal({
     }).catch(() => null);
 
     if (typeof picked === "string") {
-      setPath(picked);
+      const root = /^[A-Za-z]:[\\/]?$/.test(picked);
+      setPath(root && game ? `${picked.replace(/[\\/]$/, "")}\\${game.title}` : picked);
       setIssue(null);
     }
-  }, [path, setPath]);
+  }, [path, game, setPath]);
 
   const adopt = useCallback(async () => {
     if (!game) return;

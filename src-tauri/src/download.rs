@@ -2,7 +2,7 @@ use crate::error::{Error, Result};
 use crate::legendary;
 use crate::process;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
@@ -11,8 +11,10 @@ use tauri_plugin_shell::ShellExt;
 
 const EVENT: &str = "download:changed";
 const STORE: &str = "downloads.json";
+const FAILURE_LOG: &str = "last-failure.log";
+const RECENT_LINES: usize = 80;
 const DONE_MARKER: &str = "Finished installation process";
-const ERROR_MARKER: &str = "ERROR: ";
+const ERROR_MARKERS: [&str; 3] = ["ERROR: ", "CRITICAL: ", "! Failure: "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -295,6 +297,7 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
     tauri::async_runtime::spawn(async move {
         let mut completed = false;
         let mut buffer = String::new();
+        let mut recent: VecDeque<String> = VecDeque::new();
         let mut last = std::time::Instant::now();
 
         while let Some(event) = stream.recv().await {
@@ -321,12 +324,23 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
                             continue;
                         }
 
+                        if recent.len() == RECENT_LINES {
+                            recent.pop_front();
+                        }
+
+                        recent.push_back(segment.clone());
+
                         if segment.contains(DONE_MARKER) {
                             completed = true;
                         }
 
-                        if let Some(reason) = between(&segment, ERROR_MARKER, "") {
-                            if !reason.contains("File is missing") {
+                        if let Some(reason) = ERROR_MARKERS
+                            .iter()
+                            .find_map(|marker| between(&segment, marker, ""))
+                        {
+                            if !reason.contains("File is missing")
+                                && !reason.contains("cannot proceed")
+                            {
                                 queue
                                     .failures
                                     .lock()
@@ -419,6 +433,7 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
                                         job.percent = 100.0;
                                         job.message = None;
                                     } else {
+                                        record_failure(&sink, &app_name, &recent);
                                         job.message = Some(reason.unwrap_or_else(|| {
                                             "The download stopped unexpectedly".to_owned()
                                         }));
@@ -444,6 +459,27 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
     });
 
     Ok(())
+}
+
+fn settle(path: &str, title: &str) -> String {
+    let target = Path::new(path);
+
+    match target.file_name() {
+        Some(_) => path.to_owned(),
+        None => target
+            .join(crate::library::sanitise(title))
+            .to_string_lossy()
+            .into_owned(),
+    }
+}
+
+fn record_failure(handle: &AppHandle, app_name: &str, lines: &VecDeque<String>) {
+    let Ok(dir) = legendary::config_dir(handle) else {
+        return;
+    };
+
+    let body = lines.iter().cloned().collect::<Vec<_>>().join("\n");
+    let _ = std::fs::write(dir.join(FAILURE_LOG), format!("{app_name}\n{body}\n"));
 }
 
 fn installed(handle: &AppHandle, app_name: &str) -> bool {
@@ -481,6 +517,7 @@ pub async fn download_start(
     }
 
     let fresh = !installed(&handle, &app_name);
+    let path = settle(&path, &title);
 
     launch(
         &handle,
