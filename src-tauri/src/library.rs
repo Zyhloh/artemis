@@ -1,16 +1,33 @@
 use crate::error::{Error, Result};
 use crate::elevate::{self, PathStatus};
 use crate::legendary;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use tauri::AppHandle;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Manager, State};
 
-const FORTNITE: &str = "Fortnite";
 const ART: [&str; 3] = ["DieselGameBoxTall", "OfferImageTall", "DieselGameBox"];
 const WIDE: [&str; 2] = ["DieselGameBox", "Featured"];
+const ART_DIR: &str = "art";
+const EVENT: &str = "library:changed";
+const STALE_AFTER: Duration = Duration::from_secs(10 * 60);
+const ART_PARALLEL: usize = 6;
+const MEASURE_AFTER: Duration = Duration::from_secs(10 * 60);
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Kind {
+    Game,
+    App,
+    Extra,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Game {
     pub app_name: String,
@@ -19,12 +36,94 @@ pub struct Game {
     pub namespace: Option<String>,
     pub catalog_item_id: Option<String>,
     pub build_version: Option<String>,
+    pub kind: Kind,
+    pub platforms: Vec<String>,
+    pub third_party: Option<String>,
     pub art: Option<String>,
+    pub art_file: Option<String>,
     pub wide_art: Option<String>,
+    pub wide_art_file: Option<String>,
     pub installed: bool,
     pub install_path: Option<String>,
     pub install_size: Option<u64>,
     pub installed_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Snapshot {
+    pub games: Vec<Game>,
+    pub refreshing: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Default)]
+pub struct Library {
+    known: Mutex<Option<Vec<Game>>>,
+    refreshed: Mutex<Option<Instant>>,
+    refreshing: AtomicBool,
+    sizes: Mutex<HashMap<String, (u64, Instant)>>,
+    measuring: AtomicBool,
+}
+
+impl Library {
+    fn measured(&self) -> HashMap<String, u64> {
+        self.sizes
+            .lock()
+            .map(|sizes| {
+                sizes
+                    .iter()
+                    .map(|(path, (bytes, _))| (path.clone(), *bytes))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn unmeasured(&self, roots: Vec<String>, force: bool) -> Vec<String> {
+        let Ok(sizes) = self.sizes.lock() else {
+            return Vec::new();
+        };
+
+        roots
+            .into_iter()
+            .filter(|root| {
+                force
+                    || sizes
+                        .get(root)
+                        .is_none_or(|(_, at)| at.elapsed() > MEASURE_AFTER)
+            })
+            .collect()
+    }
+
+    fn record(&self, root: String, bytes: u64) {
+        if let Ok(mut sizes) = self.sizes.lock() {
+            sizes.insert(root, (bytes, Instant::now()));
+        }
+    }
+
+    fn stale(&self) -> bool {
+        self.refreshed
+            .lock()
+            .ok()
+            .and_then(|slot| *slot)
+            .is_none_or(|at| at.elapsed() > STALE_AFTER)
+    }
+
+    fn touch(&self) {
+        if let Ok(mut slot) = self.refreshed.lock() {
+            slot.replace(Instant::now());
+        }
+    }
+
+    fn remember(&self, games: &[Game]) -> bool {
+        let Ok(mut slot) = self.known.lock() else {
+            return true;
+        };
+
+        let changed = slot.as_deref() != Some(games);
+        slot.replace(games.to_vec());
+        changed
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -58,6 +157,11 @@ fn text(value: &Value, path: &[&str]) -> Option<String> {
     cursor.as_str().map(str::to_owned)
 }
 
+fn read_json(path: &Path) -> Option<Value> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&raw).ok()
+}
+
 fn installed(handle: &AppHandle) -> Vec<Installed> {
     let Ok(dir) = legendary::config_dir(handle) else {
         return Vec::new();
@@ -72,7 +176,183 @@ fn installed(handle: &AppHandle) -> Vec<Installed> {
         .unwrap_or_default()
 }
 
-fn game(entry: &Value, owned: &[Installed]) -> Option<Game> {
+fn owned(dir: &Path) -> HashSet<String> {
+    let Some(assets) = read_json(&dir.join("assets.json")) else {
+        return HashSet::new();
+    };
+
+    let Some(platforms) = assets.as_object() else {
+        return HashSet::new();
+    };
+
+    platforms
+        .values()
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter_map(|asset| text(asset, &["app_name"]))
+        .collect()
+}
+
+fn art_dir(handle: &AppHandle) -> Option<PathBuf> {
+    let dir = handle.path().config_dir().ok()?.join("Artemis").join(ART_DIR);
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir)
+}
+
+fn art_key(url: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+
+    for byte in url.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+
+    format!("{hash:016x}")
+}
+
+fn cached_art(dir: Option<&Path>, url: Option<&str>) -> Option<String> {
+    let target = dir?.join(art_key(url?));
+    target
+        .exists()
+        .then(|| target.to_string_lossy().into_owned())
+}
+
+async fn store_art(dir: PathBuf, web: reqwest::Client, url: String) {
+    let target = dir.join(art_key(&url));
+
+    if target.exists() {
+        return;
+    }
+
+    let Ok(response) = web.get(&url).send().await else {
+        return;
+    };
+
+    if !response.status().is_success() {
+        return;
+    }
+
+    if let Ok(bytes) = response.bytes().await {
+        let _ = std::fs::write(target, &bytes);
+    }
+}
+
+fn categories(metadata: &Value) -> Vec<String> {
+    metadata
+        .get("categories")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| text(entry, &["path"]))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn kind_of(paths: &[String]) -> Kind {
+    let has = |wanted: &str| paths.iter().any(|path| path == wanted);
+
+    if has("games") || has("games/experience") {
+        Kind::Game
+    } else if has("applications") || has("software") {
+        Kind::App
+    } else if has("digitalextras") || paths.iter().any(|path| path.starts_with("addons")) {
+        Kind::Extra
+    } else {
+        Kind::Game
+    }
+}
+
+fn listable(entry: &Value, owned: &HashSet<String>) -> bool {
+    let Some(app_name) = entry.get("app_name").and_then(Value::as_str) else {
+        return false;
+    };
+
+    if !owned.contains(app_name) {
+        return false;
+    }
+
+    let metadata = entry.get("metadata").unwrap_or(&Value::Null);
+
+    if metadata.get("mainGameItem").is_some() {
+        return false;
+    }
+
+    let paths = categories(metadata);
+
+    !paths.iter().any(|path| path == "engines" || path.starts_with("engines/"))
+}
+
+fn footprint(root: &Path) -> u64 {
+    let mut total = 0;
+    let mut pending = vec![root.to_path_buf()];
+
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+
+            if kind.is_symlink() {
+                continue;
+            }
+
+            if kind.is_dir() {
+                pending.push(entry.path());
+            } else if let Ok(meta) = entry.metadata() {
+                total += meta.len();
+            }
+        }
+    }
+
+    total
+}
+
+fn root_key(path: &str) -> String {
+    path.trim_end_matches(['\\', '/']).to_lowercase()
+}
+
+async fn measure(handle: AppHandle, force: bool) {
+    let state = handle.state::<Library>();
+
+    if state.measuring.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let roots: Vec<String> = {
+        let mut seen = HashSet::new();
+
+        installed(&handle)
+            .into_iter()
+            .filter_map(|item| item.install_path)
+            .filter(|path| seen.insert(root_key(path)))
+            .collect()
+    };
+
+    for root in state.unmeasured(roots, force) {
+        let target = PathBuf::from(&root);
+        let bytes = tauri::async_runtime::spawn_blocking(move || footprint(&target))
+            .await
+            .unwrap_or(0);
+
+        state.record(root_key(&root), bytes);
+    }
+
+    state.measuring.store(false, Ordering::SeqCst);
+    publish(&handle, local(&handle), false, None);
+}
+
+fn game(
+    art: Option<&Path>,
+    entry: &Value,
+    installs: &[Installed],
+    sizes: &HashMap<String, u64>,
+) -> Option<Game> {
     let app_name = entry.get("app_name")?.as_str()?.to_owned();
     let metadata = entry.get("metadata").unwrap_or(&Value::Null);
     let images = metadata
@@ -81,44 +361,231 @@ fn game(entry: &Value, owned: &[Installed]) -> Option<Game> {
         .cloned()
         .unwrap_or_default();
 
-    let local = owned.iter().find(|item| item.app_name == app_name);
+    let local = installs.iter().find(|item| item.app_name == app_name);
+    let footprint = local.and_then(|item| item.install_path.as_deref()).map(|root| {
+        let key = root_key(root);
+
+        sizes.get(&key).copied().unwrap_or_else(|| {
+            installs
+                .iter()
+                .filter(|item| {
+                    item.install_path
+                        .as_deref()
+                        .is_some_and(|path| root_key(path) == key)
+                })
+                .filter_map(|item| item.install_size)
+                .sum::<u64>()
+        })
+    });
+
+    let tall = image(&images, &ART);
+    let wide = image(&images, &WIDE);
+
+    let platforms = entry
+        .get("asset_infos")
+        .and_then(Value::as_object)
+        .map(|assets| assets.keys().cloned().collect())
+        .unwrap_or_default();
 
     Some(Game {
         title: entry
             .get("app_title")
             .and_then(Value::as_str)
             .unwrap_or(&app_name)
+            .trim()
             .to_owned(),
         developer: text(metadata, &["developer"]),
         namespace: text(metadata, &["namespace"]),
         catalog_item_id: text(metadata, &["id"]),
         build_version: text(entry, &["asset_infos", "Windows", "build_version"]),
-        art: image(&images, &ART),
-        wide_art: image(&images, &WIDE),
+        kind: kind_of(&categories(metadata)),
+        platforms,
+        third_party: text(
+            metadata,
+            &["customAttributes", "ThirdPartyManagedProvider", "value"],
+        ),
+        art_file: cached_art(art, tall.as_deref()),
+        wide_art_file: cached_art(art, wide.as_deref()),
+        art: tall,
+        wide_art: wide,
         installed: local.is_some(),
         install_path: local.and_then(|item| item.install_path.clone()),
-        install_size: local.and_then(|item| item.install_size),
+        install_size: footprint.filter(|total| *total > 0),
         installed_version: local.and_then(|item| item.version.clone()),
         app_name,
     })
 }
 
-#[tauri::command]
-pub async fn library_list(handle: AppHandle) -> Result<Vec<Game>> {
-    let output = legendary::run(&handle, &["list", "--json"]).await?;
+fn stored(handle: &AppHandle) -> Vec<Value> {
+    let Ok(dir) = legendary::config_dir(handle) else {
+        return Vec::new();
+    };
+
+    let owned = owned(&dir);
+
+    let Ok(files) = std::fs::read_dir(dir.join("metadata")) else {
+        return Vec::new();
+    };
+
+    files
+        .flatten()
+        .map(|file| file.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .filter_map(|path| read_json(&path))
+        .filter(|entry| listable(entry, &owned))
+        .collect()
+}
+
+fn art_urls(entries: &[Value]) -> Vec<String> {
+    entries
+        .iter()
+        .flat_map(|entry| {
+            let images = entry
+                .get("metadata")
+                .and_then(|meta| meta.get("keyImages"))
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+
+            [image(&images, &ART), image(&images, &WIDE)]
+        })
+        .flatten()
+        .collect()
+}
+
+fn local(handle: &AppHandle) -> Vec<Game> {
+    let installs = installed(handle);
+    let art = art_dir(handle);
+    let sizes = handle.state::<Library>().measured();
+
+    let mut games: Vec<Game> = stored(handle)
+        .iter()
+        .filter_map(|entry| game(art.as_deref(), entry, &installs, &sizes))
+        .collect();
+
+    games.sort_by(|left, right| {
+        left.title
+            .to_lowercase()
+            .cmp(&right.title.to_lowercase())
+            .then_with(|| left.app_name.cmp(&right.app_name))
+    });
+
+    games
+}
+
+fn publish(handle: &AppHandle, games: Vec<Game>, refreshing: bool, error: Option<String>) {
+    let changed = handle.state::<Library>().remember(&games);
+
+    if changed || !refreshing || error.is_some() {
+        let _ = handle.emit(
+            EVENT,
+            Snapshot {
+                games,
+                refreshing,
+                error,
+            },
+        );
+    }
+}
+
+async fn fetch(handle: &AppHandle) -> Result<()> {
+    let output = legendary::run(handle, &["list", "--json"]).await?;
 
     if output.code != Some(0) {
         return Err(Error::Sidecar(summarise(&output.stderr)));
     }
 
-    let entries: Vec<Value> = serde_json::from_str(&output.stdout)?;
-    let owned = installed(&handle);
+    Ok(())
+}
 
-    Ok(entries
-        .iter()
-        .filter(|entry| entry.get("app_name").and_then(Value::as_str) == Some(FORTNITE))
-        .filter_map(|entry| game(entry, &owned))
-        .collect())
+async fn cache_art(handle: &AppHandle) {
+    let Some(dir) = art_dir(handle) else {
+        return;
+    };
+
+    let Ok(web) = reqwest::Client::builder()
+        .user_agent("Artemis/1.0")
+        .timeout(Duration::from_secs(20))
+        .build()
+    else {
+        return;
+    };
+
+    let pending: Vec<String> = art_urls(&stored(handle))
+        .into_iter()
+        .filter(|url| !dir.join(art_key(url)).exists())
+        .collect();
+
+    if pending.is_empty() {
+        return;
+    }
+
+    futures_util::stream::iter(pending)
+        .map(|url| store_art(dir.clone(), web.clone(), url))
+        .buffer_unordered(ART_PARALLEL)
+        .collect::<Vec<()>>()
+        .await;
+}
+
+async fn refresh(handle: AppHandle) {
+    let state = handle.state::<Library>();
+
+    if state.refreshing.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    let error = match fetch(&handle).await {
+        Ok(()) => {
+            state.touch();
+            publish(&handle, local(&handle), true, None);
+            cache_art(&handle).await;
+            None
+        }
+        Err(cause) => {
+            println!("[library] refresh deferred: {cause}");
+            Some(cause.to_string())
+        }
+    };
+
+    state.refreshing.store(false, Ordering::SeqCst);
+    publish(&handle, local(&handle), false, error);
+}
+
+fn kick(handle: &AppHandle, force: bool) -> bool {
+    let state = handle.state::<Library>();
+
+    if state.refreshing.load(Ordering::SeqCst) {
+        return true;
+    }
+
+    if !force && !state.stale() {
+        return false;
+    }
+
+    tauri::async_runtime::spawn(refresh(handle.clone()));
+    true
+}
+
+#[tauri::command]
+pub fn library_list(handle: AppHandle, state: State<'_, Library>) -> Snapshot {
+    let games = local(&handle);
+    state.remember(&games);
+
+    let refreshing = kick(&handle, games.is_empty());
+    tauri::async_runtime::spawn(measure(handle.clone(), false));
+
+    Snapshot {
+        games,
+        refreshing,
+        error: None,
+    }
+}
+
+#[tauri::command]
+pub fn library_refresh(handle: AppHandle) {
+    publish(&handle, local(&handle), true, None);
+    kick(&handle, true);
+    tauri::async_runtime::spawn(measure(handle, true));
 }
 
 #[tauri::command]
@@ -177,9 +644,13 @@ pub(crate) fn sanitise(name: &str) -> String {
         .to_owned()
 }
 
+pub(crate) fn default_install_root() -> PathBuf {
+    program_files().join(INSTALL_ROOT)
+}
+
 #[tauri::command]
-pub async fn install_default_path(title: String) -> Result<String> {
-    let path = program_files().join(INSTALL_ROOT).join(sanitise(&title));
+pub async fn install_default_path(handle: AppHandle, title: String) -> Result<String> {
+    let path = crate::settings::install_root(&handle).join(sanitise(&title));
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -288,6 +759,7 @@ pub async fn library_uninstall(handle: AppHandle, app_name: String) -> Result<()
     }
 
     crate::game::args_clear(&handle, &app_name);
+    publish(&handle, local(&handle), false, None);
 
     Ok(())
 }
@@ -299,6 +771,8 @@ pub async fn library_import(handle: AppHandle, app_name: String, path: String) -
     if output.code != Some(0) {
         return Err(Error::Sidecar(summarise(&output.stderr)));
     }
+
+    publish(&handle, local(&handle), false, None);
 
     Ok(())
 }

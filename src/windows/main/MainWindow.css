@@ -9,6 +9,12 @@
   display: flex;
   flex: 1;
   min-height: 0;
+  filter: blur(0);
+  transition: filter var(--transition-slide);
+}
+
+.window__body--veiled {
+  filter: blur(14px);
 }
 
 .window__content {
@@ -67,5 +73,9 @@
 @media (prefers-reduced-motion: reduce) {
   .window__scroll {
     animation: none;
+  }
+
+  .window__body {
+    transition: none;
   }
 }

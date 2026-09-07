@@ -14,12 +14,13 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+base64 = "0.22.1"
 futures-util = "0.3.31"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-native-roots", "rustls-tls-webpki-roots", "system-proxy"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sysinfo = "0.38.4"
-tauri = { version = "2.11.5", features = [] }
+tauri = { version = "2.11.5", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-deep-link = "2.4.9"
 tauri-plugin-dialog = "2.7.2"
 tauri-plugin-http = { version = "2.5.9", default-features = false, features = ["unsafe-headers", "rustls-tls-native-roots", "rustls-tls-webpki-roots", "http2", "charset", "cookies", "macos-system-configuration"] }

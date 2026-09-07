@@ -26,6 +26,10 @@ body {
   transition: background var(--transition-base);
 }
 
+:root[data-window="tray"] #root {
+  background: transparent;
+}
+
 body {
   color: var(--text-primary);
   font-family: var(--font-sans);

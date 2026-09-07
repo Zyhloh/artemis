@@ -8,6 +8,7 @@ export interface NavRailItem {
   id: string;
   label: string;
   icon: IconName;
+  badge?: number;
 }
 
 export interface NavRailGroup {
@@ -143,6 +144,9 @@ export function NavRail({
     >
       <span className="rail__glyph">
         <Icon name={item.icon} />
+        {item.badge ? (
+          <span className="rail__badge">{item.badge > 9 ? "9+" : item.badge}</span>
+        ) : null}
       </span>
       <span className="rail__label">{item.label}</span>
     </button>

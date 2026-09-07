@@ -181,14 +181,14 @@ pub(crate) fn epoch(stamp: &str) -> Option<i64> {
 }
 
 pub fn start(handle: AppHandle) {
-    if let Some(cached) = restore(&handle) {
-        handle.state::<Shop>().set(cached);
-    }
-
     tauri::async_runtime::spawn(run(handle));
 }
 
 async fn run(handle: AppHandle) {
+    if let Some(cached) = restore(&handle) {
+        handle.state::<Shop>().set(cached);
+    }
+
     let web = match reqwest::Client::builder()
         .user_agent("Artemis/1.0")
         .timeout(Duration::from_secs(20))

@@ -28,8 +28,7 @@
   display: flex;
   flex-direction: column;
   width: var(--friends-width);
-  background: var(--bg-rail);
-  backdrop-filter: blur(20px) saturate(150%);
+  background: var(--bg-panel);
   border-left: 1px solid var(--border-subtle);
   box-shadow: var(--glass-edge), var(--shadow-lg);
   transform: translateX(100%);

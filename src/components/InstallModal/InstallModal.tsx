@@ -13,7 +13,7 @@ interface InstallModalProps {
     appName: string,
     title: string,
     path: string,
-    tags: string[]
+    tags: string[],
   ) => Promise<void>;
   onImport: (appName: string, title: string, path: string) => Promise<void>;
   onClose: () => void;
@@ -31,7 +31,7 @@ export function InstallModal({
   game,
   onInstall,
   onImport,
-  onClose
+  onClose,
 }: InstallModalProps) {
   const {
     options,
@@ -45,7 +45,7 @@ export function InstallModal({
     status,
     setPath,
     toggle,
-    inspect
+    inspect,
   } = useInstallOptions(game);
   const [issue, setIssue] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -55,12 +55,16 @@ export function InstallModal({
       directory: true,
       multiple: false,
       title: "Choose install location",
-      defaultPath: path || undefined
+      defaultPath: path || undefined,
     }).catch(() => null);
 
     if (typeof picked === "string") {
       const root = /^[A-Za-z]:[\\/]?$/.test(picked);
-      setPath(root && game ? `${picked.replace(/[\\/]$/, "")}\\${game.title}` : picked);
+      setPath(
+        root && game
+          ? `${picked.replace(/[\\/]$/, "")}\\${game.title}`
+          : picked,
+      );
       setIssue(null);
     }
   }, [path, game, setPath]);
@@ -71,7 +75,7 @@ export function InstallModal({
     const picked = await open({
       directory: true,
       multiple: false,
-      title: `Locate the existing ${game.title} folder`
+      title: `Locate the existing ${game.title} folder`,
     }).catch(() => null);
 
     if (typeof picked !== "string") return;
@@ -96,7 +100,7 @@ export function InstallModal({
       setIssue(
         cause instanceof Error
           ? cause.message
-          : "That folder could not be created."
+          : "That folder could not be created.",
       );
     } finally {
       setWorking(false);
@@ -116,7 +120,7 @@ export function InstallModal({
       await inspect();
     } catch (cause) {
       setIssue(
-        cause instanceof Error ? cause.message : "Access could not be granted."
+        cause instanceof Error ? cause.message : "Access could not be granted.",
       );
     } finally {
       setWorking(false);
@@ -163,42 +167,44 @@ export function InstallModal({
             </span>
           </div>
 
-          <div className="install__field">
-            <span className="install__label">Components</span>
-            <div className="install__list">
-              {options.map((option) => {
-                const checked = selected.includes(option.id);
+          {options.length > 0 && (
+            <div className="install__field">
+              <span className="install__label">Components</span>
+              <div className="install__list">
+                {options.map((option) => {
+                  const checked = selected.includes(option.id);
 
-                return (
-                  <label
-                    className={`install__option${
-                      option.required ? " install__option--locked" : ""
-                    }`}
-                    key={option.id}
-                  >
-                    <input
-                      className="install__checkbox"
-                      type="checkbox"
-                      checked={checked || option.required}
-                      disabled={option.required}
-                      onChange={() => toggle(option.id)}
-                    />
-                    <span className="install__box" aria-hidden="true">
-                      <Icon name="check" size={11} strokeWidth={2.6} />
-                    </span>
-                    <span className="install__copy">
-                      <span className="install__name">{option.name}</span>
-                      {option.description && (
-                        <span className="install__description">
-                          {option.description}
-                        </span>
-                      )}
-                    </span>
-                  </label>
-                );
-              })}
+                  return (
+                    <label
+                      className={`install__option${
+                        option.required ? " install__option--locked" : ""
+                      }`}
+                      key={option.id}
+                    >
+                      <input
+                        className="install__checkbox"
+                        type="checkbox"
+                        checked={checked || option.required}
+                        disabled={option.required}
+                        onChange={() => toggle(option.id)}
+                      />
+                      <span className="install__box" aria-hidden="true">
+                        <Icon name="check" size={11} strokeWidth={2.6} />
+                      </span>
+                      <span className="install__copy">
+                        <span className="install__name">{option.name}</span>
+                        {option.description && (
+                          <span className="install__description">
+                            {option.description}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {cramped && (
             <p className="install__issue">
@@ -225,7 +231,11 @@ export function InstallModal({
           </button>
 
           <div className="modal__actions">
-            <button className="modal__button" onClick={onClose} disabled={working}>
+            <button
+              className="modal__button"
+              onClick={onClose}
+              disabled={working}
+            >
               Cancel
             </button>
 

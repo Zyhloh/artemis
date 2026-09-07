@@ -41,14 +41,14 @@ export async function linkLibrary(account: Account): Promise<void> {
   await setLauncherToken(account.accountId, toLauncherToken(saved));
 }
 
-let linking: { accountId: string; task: Promise<void> } | null = null;
+let linking: { accountId: string; task: Promise<boolean> } | null = null;
 
-export async function ensureLibraryLink(account: Account): Promise<void> {
+export async function ensureLibraryLink(account: Account): Promise<boolean> {
   if (linking?.accountId === account.accountId) return linking.task;
 
   const task = (async () => {
     const linked = await libraryAccount();
-    if (linked === account.accountId) return;
+    if (linked === account.accountId) return false;
 
     await linkLibrary(account);
 
@@ -59,12 +59,14 @@ export async function ensureLibraryLink(account: Account): Promise<void> {
         `The library is still signed in as another account (${now ?? "none"}).`
       );
     }
+
+    return true;
   })();
 
   linking = { accountId: account.accountId, task };
 
   try {
-    await task;
+    return await task;
   } finally {
     if (linking?.task === task) linking = null;
   }

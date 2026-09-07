@@ -52,6 +52,8 @@ export type AccountStage =
   | "logout"
   | "error";
 
+export type LibraryKind = "game" | "app" | "extra";
+
 export interface LibraryGame {
   appName: string;
   title: string;
@@ -59,12 +61,23 @@ export interface LibraryGame {
   namespace: string | null;
   catalogItemId: string | null;
   buildVersion: string | null;
+  kind: LibraryKind;
+  platforms: string[];
+  thirdParty: string | null;
   art: string | null;
+  artFile: string | null;
   wideArt: string | null;
+  wideArtFile: string | null;
   installed: boolean;
   installPath: string | null;
   installSize: number | null;
   installedVersion: string | null;
+}
+
+export interface LibrarySnapshot {
+  games: LibraryGame[];
+  refreshing: boolean;
+  error: string | null;
 }
 
 export type LibraryStatus =
@@ -92,6 +105,7 @@ export type DownloadStage =
 export type DownloadKind = "install" | "verify" | "import";
 
 export interface DownloadJob {
+  id: string;
   appName: string;
   kind: DownloadKind;
   missing: number;
@@ -109,6 +123,8 @@ export interface DownloadJob {
   diskRead: number;
   eta: string;
   message: string | null;
+  startedAt: number;
+  finishedAt: number | null;
 }
 
 export interface PathStatus {

@@ -1,0 +1,125 @@
+.menu {
+  position: fixed;
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 196px;
+  max-width: 260px;
+  padding: 5px;
+  border-radius: var(--radius-md);
+  background: var(--bg-popover);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--glass-edge), var(--shadow-lg);
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  transform-origin: top right;
+  pointer-events: none;
+}
+
+.menu--ready {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  animation: menu-enter var(--transition-base);
+}
+
+.menu--leaving {
+  pointer-events: none;
+  animation: menu-exit 140ms ease-in forwards;
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  color: var(--text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.menu__item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.menu__item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.menu__item--danger {
+  color: var(--danger);
+}
+
+.menu__item--danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.menu__icon {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.menu__copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.menu__label {
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.menu__hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.menu__check {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--text-primary);
+}
+
+.menu__rule {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-subtle);
+}
+
+@keyframes menu-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@keyframes menu-exit {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu--ready,
+  .menu--leaving {
+    animation: none;
+  }
+
+  .menu__item {
+    transition: none;
+  }
+}

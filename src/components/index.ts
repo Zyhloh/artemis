@@ -1,7 +1,6 @@
 export { AccountModal } from "./AccountModal/AccountModal";
 export { BusyModal } from "./BusyModal/BusyModal";
 export { ConfirmModal } from "./ConfirmModal/ConfirmModal";
-export { DownloadsDock } from "./DownloadsDock/DownloadsDock";
 export { FriendsPanel } from "./FriendsPanel/FriendsPanel";
 export { GameMenu } from "./GameMenu/GameMenu";
 export { Icon, type IconName } from "./Icon/Icon";

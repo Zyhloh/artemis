@@ -12,6 +12,9 @@ mod locker;
 mod paths;
 mod process;
 mod profile;
+mod settings;
+mod startup;
+mod tray;
 mod shop;
 mod shortcut;
 mod stream;
@@ -27,10 +30,11 @@ const APPEARANCE_EVENT: &str = "appearance:changed";
 
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(main) = app.get_webview_window(window::MAIN) {
-                let _ = main.show();
-                let _ = main.set_focus();
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let silent = argv.iter().any(|arg| launch_target(arg).is_some());
+
+            if !silent {
+                tray::show_main(app);
             }
         }))
         .plugin(tauri_plugin_deep_link::init())
@@ -43,6 +47,7 @@ pub fn run() {
         .manage(game::Games::default())
         .manage(Pending::default())
         .manage(shop::Shop::default())
+        .manage(library::Library::default())
         .manage(profile::Profiles::default())
         .manage(locker::Lockers::default())
         .manage(stream::Streams::default())
@@ -53,6 +58,11 @@ pub fn run() {
                 .unwrap_or(Backdrop::Acrylic);
 
             app.manage(Preference(preferred));
+            app.manage(tray::Hidden(startup::requested_hidden()));
+
+            if let Err(cause) = tray::setup(handle) {
+                println!("[tray] unavailable: {cause}");
+            }
 
             let _ = handle.deep_link().register_all();
 
@@ -85,16 +95,26 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|window, event| match event {
-            WindowEvent::ThemeChanged(_) | WindowEvent::Focused(true) => {
+        .on_window_event(|window, event| {
+            tray::handle_event(window.app_handle(), window, event);
+
+            if window.label() != window::MAIN {
+                return;
+            }
+
+            if let WindowEvent::ThemeChanged(_) | WindowEvent::Focused(true) = event {
                 refresh(window.app_handle(), window);
             }
-            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             commands::app::get_config,
             commands::app::get_app_info,
             commands::app::get_appearance,
+            settings::settings_get,
+            settings::settings_update,
+            tray::tray_action,
+            tray::startup_hidden,
+            settings::settings_set_install_root,
             shortcut::shortcut_create,
             stream::stream_open,
             stream::stream_send,
@@ -111,6 +131,7 @@ pub fn run() {
             accounts::accounts_remove,
             accounts::accounts_set_launcher,
             library::library_list,
+            library::library_refresh,
             library::library_authenticate,
             library::library_account,
             library::library_sign_out,
@@ -133,6 +154,7 @@ pub fn run() {
             download::download_resume,
             download::download_cancel,
             download::download_clear,
+            download::download_clear_history,
             download::download_list,
             game::game_launch,
             game::game_stop,
@@ -181,12 +203,7 @@ fn deep_link(handle: &AppHandle, url: &str) {
             slot.replace(app_name.clone());
         }
 
-        if let Some(main) = owner.get_webview_window(window::MAIN) {
-            let _ = main.show();
-            let _ = main.set_focus();
-        }
-
-        let _ = owner.emit(LAUNCH_EVENT, app_name);
+        let _ = owner.emit_to(window::MAIN, LAUNCH_EVENT, app_name);
     });
 }
 

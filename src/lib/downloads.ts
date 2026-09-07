@@ -28,8 +28,11 @@ export const resumeDownload = (appName: string) =>
 export const cancelDownload = (appName: string) =>
   invoke<void>("download_cancel", { appName });
 
-export const clearDownload = (appName: string) =>
-  invoke<void>("download_clear", { appName });
+export const clearDownload = (id: string) =>
+  invoke<void>("download_clear", { id });
+
+export const clearDownloadHistory = () =>
+  invoke<void>("download_clear_history");
 
 export const watchDownloads = (handler: (jobs: DownloadJob[]) => void) =>
   listen<DownloadJob[]>(CHANGED, ({ payload }) => handler(payload));

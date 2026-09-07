@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   cancelDownload,
   clearDownload,
+  clearDownloadHistory,
   listDownloads,
   pauseDownload,
   resumeDownload,
@@ -60,8 +61,12 @@ export function useDownloads() {
     void cancelDownload(appName);
   }, []);
 
-  const clear = useCallback((appName: string) => {
-    void clearDownload(appName);
+  const clear = useCallback((id: string) => {
+    void clearDownload(id);
+  }, []);
+
+  const clearHistory = useCallback(() => {
+    void clearDownloadHistory();
   }, []);
 
   const pending = jobs.filter((job) => ACTIVE.includes(job.stage)).length;
@@ -81,6 +86,7 @@ export function useDownloads() {
     pause,
     resume,
     cancel,
-    clear
+    clear,
+    clearHistory
   };
 }

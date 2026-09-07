@@ -1,50 +1,85 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { listLibrary } from "@lib/library";
+import { listLibrary, refreshLibrary, watchLibrary } from "@lib/library";
 import { ensureLibraryLink } from "@lib/launcher";
-import type { Account, LibraryGame, LibraryStatus } from "@/types";
+import type {
+  Account,
+  LibraryGame,
+  LibrarySnapshot,
+  LibraryStatus
+} from "@/types";
 
 const message = (cause: unknown) =>
   cause instanceof Error ? cause.message : "Your library could not be loaded.";
 
+let cached: LibraryGame[] | null = null;
+
 export function useLibrary(account: Account | null) {
-  const [games, setGames] = useState<LibraryGame[]>([]);
-  const [status, setStatus] = useState<LibraryStatus>("signedOut");
+  const accountId = account?.accountId ?? null;
+  const [games, setGames] = useState<LibraryGame[]>(cached ?? []);
+  const [status, setStatus] = useState<LibraryStatus>(() => {
+    if (!accountId) return "signedOut";
+    return cached ? "ready" : "loading";
+  });
   const [error, setError] = useState<string | null>(null);
-  const request = useRef(0);
+  const held = useRef(account);
+  held.current = account;
 
-  const load = useCallback(async () => {
-    const ticket = ++request.current;
+  useEffect(() => {
+    const owner = held.current;
 
-    if (!account) {
+    if (!accountId || !owner) {
+      cached = null;
       setGames([]);
       setError(null);
       setStatus("signedOut");
       return;
     }
 
-    setStatus("loading");
-    setError(null);
+    let live = true;
 
-    try {
-      await ensureLibraryLink(account);
+    const adopt = (snapshot: LibrarySnapshot) => {
+      if (!live) return;
 
-      const found = await listLibrary();
-      if (ticket !== request.current) return;
+      cached = snapshot.games;
+      setGames(snapshot.games);
 
-      setGames(found);
-      setStatus("ready");
-    } catch (cause) {
-      if (ticket !== request.current) return;
+      if (snapshot.games.length || !snapshot.refreshing) {
+        setError(snapshot.error);
+        setStatus(snapshot.error && !snapshot.games.length ? "error" : "ready");
+        return;
+      }
 
-      setGames([]);
+      setStatus("loading");
+    };
+
+    const fail = (cause: unknown) => {
+      if (!live || cached?.length) return;
+
       setError(message(cause));
       setStatus("error");
-    }
-  }, [account]);
+    };
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+    const watching = watchLibrary(adopt);
 
-  return { games, status, error, reload: load };
+    listLibrary().then(adopt).catch(fail);
+
+    ensureLibraryLink(owner)
+      .then((relinked) => {
+        if (live && relinked) void refreshLibrary();
+      })
+      .catch(fail);
+
+    return () => {
+      live = false;
+      void watching.then((off) => off());
+    };
+  }, [accountId]);
+
+  const reload = useCallback(() => {
+    setError(null);
+    if (!cached?.length) setStatus("loading");
+    return refreshLibrary();
+  }, []);
+
+  return { games, status, error, reload };
 }

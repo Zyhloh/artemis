@@ -74,7 +74,11 @@ fn record(handle: &AppHandle, app_name: &str) -> Result<Record> {
 
 #[tauri::command]
 pub fn shortcut_create(handle: AppHandle, app_name: String) -> Result<String> {
-    let entry = record(&handle, &app_name)?;
+    create(&handle, &app_name)
+}
+
+pub fn create(handle: &AppHandle, app_name: &str) -> Result<String> {
+    let entry = record(handle, app_name)?;
 
     if entry.install_path.is_empty() {
         return Err(Error::Sidecar(String::from(
@@ -85,7 +89,7 @@ pub fn shortcut_create(handle: AppHandle, app_name: String) -> Result<String> {
     let icon = PathBuf::from(&entry.install_path).join(entry.executable.replace('/', "\\"));
 
     let label = sanitise(if entry.title.is_empty() {
-        &app_name
+        app_name
     } else {
         &entry.title
     });

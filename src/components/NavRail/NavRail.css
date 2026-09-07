@@ -137,10 +137,30 @@
 }
 
 .rail__glyph {
+  position: relative;
   display: grid;
   place-items: center;
   width: 20px;
   flex-shrink: 0;
+}
+
+.rail__badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  display: grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  border: 2px solid var(--bg-popover);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--bg-popover);
+  font-variant-numeric: tabular-nums;
 }
 
 .rail__label {

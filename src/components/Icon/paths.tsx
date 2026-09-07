@@ -26,7 +26,13 @@ export type IconName =
   | "check"
   | "trash"
   | "close"
-  | "pin";
+  | "pin"
+  | "grid"
+  | "list"
+  | "filter"
+  | "chevronDown"
+  | "chevronRight"
+  | "external";
 
 export const ICON_PATHS: Record<IconName, ReactNode> = {
   home: (
@@ -143,6 +149,32 @@ export const ICON_PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   chevronLeft: <path d="M14.6 4.8 7.4 12l7.2 7.2" />,
+  chevronDown: <path d="M4.8 9.4 12 16.6l7.2-7.2" />,
+  chevronRight: <path d="M9.4 4.8 16.6 12l-7.2 7.2" />,
+  grid: (
+    <>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.6" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.6" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.6" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" />
+    </>
+  ),
+  list: (
+    <>
+      <path d="M8.5 6h12M8.5 12h12M8.5 18h12" />
+      <circle cx="4.2" cy="6" r="1.1" />
+      <circle cx="4.2" cy="12" r="1.1" />
+      <circle cx="4.2" cy="18" r="1.1" />
+    </>
+  ),
+  filter: <path d="M3.5 5.5h17l-6.6 7.6v5.4l-3.8 1.8v-7.2Z" />,
+  external: (
+    <>
+      <path d="M14 4.5h5.5V10" />
+      <path d="M19.5 4.5 11 13" />
+      <path d="M17.5 13.5v5a1.5 1.5 0 0 1-1.5 1.5H5.5A1.5 1.5 0 0 1 4 18.5V8A1.5 1.5 0 0 1 5.5 6.5h5" />
+    </>
+  ),
   plus: <path d="M12 5.2v13.6M5.2 12h13.6" />,
   link: (
     <>

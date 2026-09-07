@@ -1,12 +1,24 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type {
   GameStatus,
   InstallManifest,
   LibraryGame,
+  LibrarySnapshot,
   PathStatus
 } from "@/types";
 
-export const listLibrary = () => invoke<LibraryGame[]>("library_list");
+export const artSource = (game: LibraryGame): string | null =>
+  game.artFile ? convertFileSrc(game.artFile) : game.art;
+
+const CHANGED = "library:changed";
+
+export const listLibrary = () => invoke<LibrarySnapshot>("library_list");
+
+export const refreshLibrary = () => invoke<void>("library_refresh");
+
+export const watchLibrary = (handler: (snapshot: LibrarySnapshot) => void) =>
+  listen<LibrarySnapshot>(CHANGED, ({ payload }) => handler(payload));
 
 export const authenticateLibrary = (code: string) =>
   invoke<void>("library_authenticate", { code });

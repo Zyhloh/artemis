@@ -104,8 +104,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 420px;
 }
 
 .shop__category {

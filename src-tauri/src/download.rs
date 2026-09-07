@@ -13,6 +13,7 @@ const EVENT: &str = "download:changed";
 const STORE: &str = "downloads.json";
 const FAILURE_LOG: &str = "last-failure.log";
 const RECENT_LINES: usize = 80;
+const HISTORY_LIMIT: usize = 100;
 const DONE_MARKER: &str = "Finished installation process";
 const ERROR_MARKERS: [&str; 3] = ["ERROR: ", "CRITICAL: ", "! Failure: "];
 
@@ -40,9 +41,18 @@ impl Stage {
     }
 }
 
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_secs() as i64)
+        .unwrap_or_default()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Job {
+    #[serde(default)]
+    pub id: String,
     pub app_name: String,
     pub title: String,
     pub path: String,
@@ -60,6 +70,10 @@ pub struct Job {
     pub disk_read: f64,
     pub eta: String,
     pub message: Option<String>,
+    #[serde(default)]
+    pub started_at: i64,
+    #[serde(default)]
+    pub finished_at: Option<i64>,
 }
 
 impl Job {
@@ -71,7 +85,10 @@ impl Job {
         kind: Kind,
         fresh: bool,
     ) -> Self {
+        let started_at = now();
+
         Self {
+            id: format!("{app_name}:{started_at}:{}", std::process::id()),
             app_name,
             title,
             path,
@@ -89,6 +106,8 @@ impl Job {
             disk_read: 0.0,
             eta: String::new(),
             message: None,
+            started_at,
+            finished_at: None,
         }
     }
 
@@ -103,6 +122,7 @@ impl Job {
 #[derive(Default)]
 pub struct Queue {
     jobs: Mutex<HashMap<String, Job>>,
+    history: Mutex<Vec<Job>>,
     children: Mutex<HashMap<String, CommandChild>>,
     roots: Mutex<HashMap<String, u32>>,
     failures: Mutex<HashMap<String, String>>,
@@ -110,25 +130,47 @@ pub struct Queue {
 
 impl Queue {
     fn snapshot(&self) -> Vec<Job> {
-        let jobs = self.jobs.lock().unwrap();
-        let mut list: Vec<Job> = jobs.values().cloned().collect();
-        list.sort_by(|left, right| left.title.cmp(&right.title));
+        let mut list: Vec<Job> = self.jobs.lock().unwrap().values().cloned().collect();
+        list.sort_by(|left, right| right.started_at.cmp(&left.started_at));
+        list.extend(self.history.lock().unwrap().iter().cloned());
         list
     }
+
+    fn archive(&self, mut job: Job) {
+        job.idle();
+        job.finished_at = Some(now());
+
+        let mut history = self.history.lock().unwrap();
+        history.insert(0, job);
+        history.truncate(HISTORY_LIMIT);
+    }
+
+    fn take(&self, app_name: &str) -> Option<Job> {
+        self.jobs.lock().unwrap().remove(app_name)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Store {
+    active: Vec<Job>,
+    history: Vec<Job>,
 }
 
 fn store_path(handle: &AppHandle) -> Result<PathBuf> {
     Ok(legendary::config_dir(handle)?.join(STORE))
 }
 
-fn persist(handle: &AppHandle, jobs: &[Job]) {
+fn persist(handle: &AppHandle, snapshot: &[Job]) {
     let Ok(path) = store_path(handle) else {
         return;
     };
 
-    let keep: Vec<&Job> = jobs.iter().filter(|job| !job.stage.settled()).collect();
+    let (history, active): (Vec<Job>, Vec<Job>) = snapshot
+        .iter()
+        .cloned()
+        .partition(|job| job.stage.settled());
 
-    if let Ok(raw) = serde_json::to_string_pretty(&keep) {
+    if let Ok(raw) = serde_json::to_string_pretty(&Store { active, history }) {
         let _ = std::fs::write(path, raw);
     }
 }
@@ -364,6 +406,7 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
                 }
                 CommandEvent::Terminated(status) => {
                     let mut repair: Option<Job> = None;
+                    let mut finished: Option<Job> = None;
 
                     {
                         let queue = sink.state::<Queue>();
@@ -442,10 +485,32 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
                             }
 
                             job.idle();
+
+                            if job.stage.settled() {
+                                finished = Some(job.clone());
+                            }
+                        }
+
+                        if finished.is_some() {
+                            jobs.remove(&app_name);
                         }
                     }
 
+                    let mut pin = false;
+
+                    if let Some(job) = finished {
+                        pin = job.kind == Kind::Install && job.fresh && job.stage == Stage::Done;
+                        sink.state::<Queue>().archive(job);
+                    }
+
                     publish(&sink);
+
+                    if pin && crate::settings::load(&sink).auto_shortcuts {
+                        match crate::shortcut::create(&sink, &app_name) {
+                            Ok(path) => println!("[download] shortcut created at {path}"),
+                            Err(cause) => println!("[download] shortcut skipped: {cause}"),
+                        }
+                    }
 
                     if let Some(job) = repair {
                         let _ = launch(&sink, job);
@@ -624,8 +689,17 @@ pub async fn download_resume(handle: AppHandle, app_name: String) -> Result<()> 
 
     let job = {
         let queue = handle.state::<Queue>();
-        let jobs = queue.jobs.lock().unwrap();
-        jobs.get(&app_name).cloned()
+        let queued = queue.jobs.lock().unwrap().get(&app_name).cloned();
+
+        queued.or_else(|| {
+            queue
+                .history
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|entry| entry.app_name == app_name)
+                .cloned()
+        })
     };
 
     let Some(job) = job else {
@@ -634,17 +708,23 @@ pub async fn download_resume(handle: AppHandle, app_name: String) -> Result<()> 
         ));
     };
 
-    let restart = job.kind != Kind::Install;
+    let restart = job.kind != Kind::Install || job.stage.settled();
+    let fresh = Job::new(
+        job.app_name.clone(),
+        job.title.clone(),
+        job.path.clone(),
+        job.tags.clone(),
+        job.kind,
+        job.fresh && !installed(&handle, &job.app_name),
+    );
 
     launch(
         &handle,
         Job {
-            stage: Stage::Preparing,
-            message: None,
             percent: if restart { 0.0 } else { job.percent },
             missing: if restart { 0 } else { job.missing },
             mismatched: if restart { 0 } else { job.mismatched },
-            ..job
+            ..fresh
         },
     )
 }
@@ -664,7 +744,7 @@ fn discard(path: &str) {
 pub async fn download_cancel(handle: AppHandle, app_name: String) -> Result<()> {
     let (root, job) = {
         let queue = handle.state::<Queue>();
-        let job = queue.jobs.lock().unwrap().remove(&app_name);
+        let job = queue.take(&app_name);
         queue.children.lock().unwrap().remove(&app_name);
         let root = queue.roots.lock().unwrap().remove(&app_name);
         (root, job)
@@ -682,11 +762,15 @@ pub async fn download_cancel(handle: AppHandle, app_name: String) -> Result<()> 
         let _ = std::fs::remove_file(tmp.join(format!("{app_name}_sdmeta.json")));
     }
 
-    if let Some(job) = job {
+    if let Some(mut job) = job {
         if job.fresh && job.kind == Kind::Install {
             let _ = legendary::run(&handle, &["-y", "uninstall", &job.app_name]).await;
             discard(&job.path);
         }
+
+        job.stage = Stage::Failed;
+        job.message = Some("Cancelled".to_owned());
+        handle.state::<Queue>().archive(job);
     }
 
     publish(&handle);
@@ -694,14 +778,21 @@ pub async fn download_cancel(handle: AppHandle, app_name: String) -> Result<()> 
 }
 
 #[tauri::command]
-pub async fn download_clear(handle: AppHandle, app_name: String) -> Result<()> {
+pub async fn download_clear(handle: AppHandle, id: String) -> Result<()> {
     handle
         .state::<Queue>()
-        .jobs
+        .history
         .lock()
         .unwrap()
-        .remove(&app_name);
+        .retain(|job| job.id != id);
 
+    publish(&handle);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn download_clear_history(handle: AppHandle) -> Result<()> {
+    handle.state::<Queue>().history.lock().unwrap().clear();
     publish(&handle);
     Ok(())
 }
@@ -720,16 +811,40 @@ pub fn restore(handle: &AppHandle) {
         return;
     };
 
-    let Ok(saved) = serde_json::from_str::<Vec<Job>>(&raw) else {
+    let saved = serde_json::from_str::<Store>(&raw)
+        .ok()
+        .or_else(|| {
+            serde_json::from_str::<Vec<Job>>(&raw)
+                .ok()
+                .map(|active| Store {
+                    active,
+                    history: Vec::new(),
+                })
+        });
+
+    let Some(saved) = saved else {
         return;
     };
 
     let queue = handle.state::<Queue>();
     let mut jobs = queue.jobs.lock().unwrap();
+    let mut history = queue.history.lock().unwrap();
 
-    for mut job in saved {
+    for mut job in saved.active {
+        if job.id.is_empty() {
+            job.id = format!("{}:{}", job.app_name, job.started_at);
+        }
+
         job.stage = Stage::Paused;
         job.idle();
         jobs.insert(job.app_name.clone(), job);
     }
+
+    history.extend(
+        saved
+            .history
+            .into_iter()
+            .filter(|job| job.stage.settled())
+            .take(HISTORY_LIMIT),
+    );
 }

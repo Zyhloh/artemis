@@ -3,7 +3,6 @@ import {
   AccountModal,
   BusyModal,
   ConfirmModal,
-  DownloadsDock,
   FriendsPanel,
   NavRail,
   SwitchAccountModal,
@@ -17,14 +16,23 @@ import { useEpicSession } from "@hooks/useEpicSession";
 import { useFriends } from "@hooks/useFriends";
 import { useGames } from "@hooks/useGames";
 import { useLockers } from "@hooks/useLockers";
-import { uninstallGame } from "@lib/library";
+import { refreshLibrary, uninstallGame } from "@lib/library";
+import { watchTray } from "@lib/tray";
 import type { DownloadJob, LibraryGame } from "@/types";
 import "./MainWindow.css";
 
-const toRailGroup = (group: TabGroup): NavRailGroup => ({
+const toRailGroup = (
+  group: TabGroup,
+  badges: Record<string, number>
+): NavRailGroup => ({
   id: group.id,
   label: group.label,
-  items: group.items.map(({ id, label, icon }) => ({ id, label, icon }))
+  items: group.items.map(({ id, label, icon }) => ({
+    id,
+    label,
+    icon,
+    badge: badges[id]
+  }))
 });
 
 export function MainWindow() {
@@ -62,7 +70,6 @@ export function MainWindow() {
   const [cancelling, setCancelling] = useState<DownloadJob | null>(null);
   const [stopping, setStopping] = useState<LibraryGame | null>(null);
   const [removing, setRemoving] = useState<LibraryGame | null>(null);
-  const [refresh, setRefresh] = useState(0);
   const [erasing, setErasing] = useState<LibraryGame | null>(null);
   const [eraseError, setEraseError] = useState<string | null>(null);
   const settled = useRef(new Set<string>());
@@ -71,17 +78,29 @@ export function MainWindow() {
     let changed = false;
 
     for (const job of downloads.jobs) {
-      const key = `${job.appName}:${job.kind}:${job.stage}`;
+      if (job.stage !== "done" || settled.current.has(job.id)) continue;
 
-      if (job.stage !== "done" || settled.current.has(key)) continue;
-      if (job.kind === "verify") continue;
-
-      settled.current.add(key);
-      changed = true;
+      settled.current.add(job.id);
+      if (job.kind !== "verify") changed = true;
     }
 
-    if (changed) setRefresh((value) => value + 1);
+    if (changed) void refreshLibrary();
   }, [downloads.jobs]);
+
+  useEffect(() => {
+    const pending = watchTray((target) => {
+      if (target === "switch-account") {
+        setSwitchOpen(true);
+        return;
+      }
+
+      if (ALL_TABS.some((tab) => tab.id === target)) setActive(target);
+    });
+
+    return () => {
+      void pending.then((off) => off());
+    };
+  }, []);
 
   const openSwitch = useCallback(() => setSwitchOpen(true), []);
   const closeSwitch = useCallback(() => setSwitchOpen(false), []);
@@ -112,6 +131,7 @@ export function MainWindow() {
 
   const current = ALL_TABS.find((tab) => tab.id === active) ?? ALL_TABS[0];
   const View = current.view;
+  const badges = { downloads: downloads.pending };
 
   return (
     <div className="window">
@@ -121,10 +141,10 @@ export function MainWindow() {
         onToggleFriends={toggleFriends}
       />
 
-      <div className="window__body">
+      <div className={`window__body${friendsOpen ? " window__body--veiled" : ""}`}>
         <NavRail
-          groups={TAB_GROUPS.map(toRailGroup)}
-          footer={toRailGroup(FOOTER_GROUP)}
+          groups={TAB_GROUPS.map((group) => toRailGroup(group, badges))}
+          footer={toRailGroup(FOOTER_GROUP, badges)}
           account={
             account
               ? {
@@ -150,6 +170,11 @@ export function MainWindow() {
               onInstall={downloads.start}
               onImport={downloads.adopt}
               onRequestCancel={setCancelling}
+              onPause={downloads.pause}
+              onResume={downloads.resume}
+              onClear={downloads.clear}
+              onClearHistory={downloads.clearHistory}
+              onNavigate={setActive}
               onLaunch={games.launch}
               onRequestStop={setStopping}
               onUpdate={(game) =>
@@ -162,21 +187,8 @@ export function MainWindow() {
               }
               onVerify={(game) => void downloads.verify(game.appName, game.title)}
               onUninstall={setRemoving}
-              key={refresh}
             />
           </div>
-
-          {active === "library" && (
-            <DownloadsDock
-              jobs={downloads.jobs}
-              pending={downloads.pending}
-              veiled={friendsOpen}
-              onPause={downloads.pause}
-              onResume={downloads.resume}
-              onRequestCancel={setCancelling}
-              onClear={downloads.clear}
-            />
-          )}
         </main>
       </div>
 
@@ -270,7 +282,7 @@ export function MainWindow() {
                   : "The game could not be removed."
               )
             )
-            .finally(() => setRefresh((value) => value + 1));
+            .finally(() => void refreshLibrary());
         }}
         onClose={() => setRemoving(null)}
       />
