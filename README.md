@@ -2,7 +2,7 @@
 
 Artemis is an alternative desktop launcher for the Epic Games ecosystem, built for Fortnite first. It provides library management, uncapped downloads, live friends and presence, and a full Item Shop browser in a native desktop application.
 
-Version 1.1.0 rebuilds the library around your full Epic collection and adds system tray support, launcher settings, and download history.
+Version 1.1.5 adds a built-in update checker, Unreal Editor for Fortnite, editable install components, and a redesigned library with dropdown filters, on top of the 1.1.0 rebuild around your full Epic collection, system tray support, launcher settings, and download history.
 
 ## Features
 
@@ -15,6 +15,8 @@ Version 1.1.0 rebuilds the library around your full Epic collection and adds sys
 - Import games that are already installed on disk
 - Per-game launch arguments and desktop shortcut creation, automatic on install
 - Dedicated Downloads tab with live progress and a persistent history
+- Unreal Editor for Fortnite installs and launches alongside Fortnite
+- Modify Install to add or remove components such as Save the World after installing
 
 ### Launcher
 
@@ -23,6 +25,7 @@ Version 1.1.0 rebuilds the library around your full Epic collection and adds sys
 - Start with Windows as a proper startup app, launching quietly into the tray
 - Shortcut launches are handled silently while Artemis sits in the tray
 - Default install location and other preferences saved launcher-wide
+- Built-in update checker that downloads and runs new releases from GitHub
 
 ### Friends and presence
 
