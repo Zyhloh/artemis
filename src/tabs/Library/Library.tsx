@@ -12,7 +12,7 @@ import { useColumns } from "@hooks/useColumns";
 import { useFlip } from "@hooks/useFlip";
 import { useLibrary } from "@hooks/useLibrary";
 import type { Account, DownloadJob, GameSession, LibraryGame } from "@/types";
-import { FilterPanel } from "./FilterPanel";
+import { FilterMenu } from "./FilterMenu";
 import { GameCard } from "./GameCard";
 import { gameEntries } from "./menu";
 import {
@@ -50,7 +50,6 @@ interface Anchored {
 
 const VIEW_KEY = "library.view";
 const SORT_KEY = "library.sort";
-const PANEL_KEY = "library.filters";
 
 const remembered = <T extends string>(key: string, allowed: T[], fallback: T): T => {
   try {
@@ -95,9 +94,7 @@ export function Library({
   const [sort, setSort] = useState<Sort>(() =>
     remembered(SORT_KEY, ["installed", "az", "za"], "installed")
   );
-  const [panel, setPanel] = useState(() =>
-    remembered(PANEL_KEY, ["open", "closed"], "closed") === "open"
-  );
+  const [filterAnchor, setFilterAnchor] = useState<DOMRect | null>(null);
 
   const chooseView = useCallback((next: View) => {
     setView(next);
@@ -109,16 +106,10 @@ export function Library({
     remember(SORT_KEY, next);
   }, []);
 
-  const togglePanel = useCallback(() => {
-    setPanel((current) => {
-      remember(PANEL_KEY, current ? "closed" : "open");
-      return !current;
-    });
-  }, []);
-
   const grid = useRef<HTMLDivElement>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const closeSort = useCallback(() => setSortAnchor(null), []);
+  const closeFilters = useCallback(() => setFilterAnchor(null), []);
 
   const shown = useMemo(
     () => applyFilters(games, query, filters, sort),
@@ -341,9 +332,12 @@ export function Library({
               </div>
 
               <button
-                className={`library__chip${panel ? " library__chip--on" : ""}`}
-                onClick={togglePanel}
-                aria-pressed={panel}
+                className={`library__chip${filterAnchor ? " library__chip--on" : ""}`}
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setFilterAnchor((current) => (current ? null : rect));
+                }}
+                aria-pressed={filterAnchor !== null}
               >
                 <Icon name="filter" size={14} />
                 Filters
@@ -353,17 +347,18 @@ export function Library({
           )}
         </header>
 
-        <div className="library__body">
-          <div className="library__main">{body}</div>
-
-          {signedIn && panel && games.length > 0 && (
-            <FilterPanel games={games} filters={filters} onChange={setFilters} />
-          )}
-        </div>
+        <div className="library__main">{body}</div>
       </div>
 
       <ContextMenu anchor={menu?.rect ?? null} items={entries} onClose={closeMenu} />
       <ContextMenu anchor={sortAnchor} items={sortEntries} onClose={closeSort} />
+      <FilterMenu
+        anchor={filterAnchor}
+        games={games}
+        filters={filters}
+        onChange={setFilters}
+        onClose={closeFilters}
+      />
 
     </>
   );
