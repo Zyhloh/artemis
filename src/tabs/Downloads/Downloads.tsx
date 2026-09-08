@@ -1,22 +1,45 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { ContextMenu, type MenuEntry } from "@components/ContextMenu/ContextMenu";
 import { Icon, type IconName } from "@components/Icon/Icon";
 import { useLibrary } from "@hooks/useLibrary";
 import { artSource } from "@lib/library";
-import type { Account, DownloadJob } from "@/types";
+import { gameEntries } from "@tabs/Library/menu";
+import { resolveCard } from "@tabs/Library/state";
+import type { Account, DownloadJob, GameSession, LibraryGame } from "@/types";
 import "./Downloads.css";
 
 interface DownloadsProps {
   account: Account | null;
   jobs: DownloadJob[];
+  sessions: GameSession[];
   onPause: (appName: string) => void;
   onResume: (appName: string) => void;
   onRequestCancel: (job: DownloadJob) => void;
   onClear: (id: string) => void;
   onClearHistory: () => void;
   onNavigate: (id: string) => void;
+  onLaunch: (appName: string) => void;
+  onRequestStop: (game: LibraryGame) => void;
+  onVerify: (game: LibraryGame) => void;
+  onUninstall: (game: LibraryGame) => void;
+  onComponents: (game: LibraryGame) => void;
+  onInstallRequest: (game: LibraryGame) => void;
+  onManage: (game: LibraryGame) => void;
+  onLocate: (game: LibraryGame) => void;
+  onShortcut: (game: LibraryGame) => void;
 }
 
-const ACTIVE: DownloadJob["stage"][] = ["preparing", "downloading", "paused"];
+interface Anchored {
+  game: LibraryGame;
+  rect: DOMRect;
+}
+
+const ACTIVE: DownloadJob["stage"][] = [
+  "preparing",
+  "verifying",
+  "downloading",
+  "paused"
+];
 
 const KIND: Record<DownloadJob["kind"], { label: string; icon: IconName }> = {
   install: { label: "Install", icon: "download" },
@@ -27,6 +50,7 @@ const KIND: Record<DownloadJob["kind"], { label: string; icon: IconName }> = {
 const STAGE: Record<DownloadJob["kind"], Record<DownloadJob["stage"], string>> = {
   install: {
     preparing: "Preparing",
+    verifying: "Verifying existing files",
     downloading: "Downloading",
     paused: "Paused",
     done: "Installed",
@@ -34,6 +58,7 @@ const STAGE: Record<DownloadJob["kind"], Record<DownloadJob["stage"], string>> =
   },
   verify: {
     preparing: "Preparing",
+    verifying: "Verifying files",
     downloading: "Verifying files",
     paused: "Interrupted",
     done: "Verified",
@@ -41,6 +66,7 @@ const STAGE: Record<DownloadJob["kind"], Record<DownloadJob["stage"], string>> =
   },
   import: {
     preparing: "Reading folder",
+    verifying: "Checking files",
     downloading: "Importing files",
     paused: "Interrupted",
     done: "Imported",
@@ -85,6 +111,13 @@ const when = (seconds: number | null) => {
 
 const status = (job: DownloadJob) => job.message ?? STAGE[job.kind][job.stage];
 
+const label = (job: DownloadJob) => {
+  if (job.kind !== "install") return KIND[job.kind].label;
+  if (job.fresh) return "Install";
+
+  return job.tags.length ? "Modify" : "Update";
+};
+
 function Cover({
   source,
   kind,
@@ -108,18 +141,67 @@ function Cover({
 export function Downloads({
   account,
   jobs,
+  sessions,
   onPause,
   onResume,
   onRequestCancel,
   onClear,
   onClearHistory,
-  onNavigate
+  onNavigate,
+  onLaunch,
+  onRequestStop,
+  onVerify,
+  onUninstall,
+  onComponents,
+  onInstallRequest,
+  onManage,
+  onLocate,
+  onShortcut
 }: DownloadsProps) {
   const { games } = useLibrary(account);
+  const [menu, setMenu] = useState<Anchored | null>(null);
+
   const covers = useMemo(
     () => new Map(games.map((game) => [game.appName, artSource(game)])),
     [games]
   );
+
+  const owned = useMemo(
+    () => new Map(games.map((game) => [game.appName, game])),
+    [games]
+  );
+
+  const entries = useMemo((): MenuEntry[] => {
+    if (!menu) return [];
+
+    const { game } = menu;
+
+    return gameEntries(game, resolveCard(game, jobs, sessions, games), {
+      onLaunch: (target) => onLaunch(target.appName),
+      onStop: onRequestStop,
+      onInstall: onInstallRequest,
+      onLocate,
+      onVerify,
+      onComponents,
+      onShortcut,
+      onUninstall,
+      onMore: onManage
+    });
+  }, [
+    menu,
+    games,
+    jobs,
+    sessions,
+    onLaunch,
+    onRequestStop,
+    onInstallRequest,
+    onLocate,
+    onVerify,
+    onComponents,
+    onShortcut,
+    onUninstall,
+    onManage
+  ]);
 
   const active = jobs.filter((job) => ACTIVE.includes(job.stage));
   const history = jobs.filter((job) => !ACTIVE.includes(job.stage));
@@ -181,7 +263,10 @@ export function Downloads({
           <div className="downloads__list">
             {active.map((job) => {
               const plain = job.kind !== "install";
-              const busy = job.stage === "downloading" || job.stage === "preparing";
+              const busy =
+                job.stage === "downloading" ||
+                job.stage === "preparing" ||
+                job.stage === "verifying";
               const vague = plain && job.percent === 0;
 
               return (
@@ -191,7 +276,7 @@ export function Downloads({
                   <div className="downloads__body">
                     <div className="downloads__row">
                       <span className="downloads__title">{job.title}</span>
-                      <span className="downloads__kind">{KIND[job.kind].label}</span>
+                      <span className="downloads__kind">{label(job)}</span>
                       {!vague && (
                         <span className="downloads__percent">
                           {job.percent.toFixed(1)}%
@@ -228,12 +313,20 @@ export function Downloads({
                             {job.eta || "--:--:--"}
                           </span>
                           <span className="downloads__pill">
-                            {size(job.downloaded)} downloaded
+                            {job.downloadSize > 0
+                              ? `${size(job.downloaded)} of ${size(job.downloadSize)}`
+                              : `${size(job.downloaded)} downloaded`}
                           </span>
+
+                          {job.installSize > 0 && (
+                            <span className="downloads__pill">
+                              {size(job.installSize)} on disk
+                            </span>
+                          )}
                         </>
                       )}
 
-                      {job.stage === "downloading" && job.kind === "verify" && !vague && (
+                      {job.stage === "verifying" && job.kind === "verify" && !vague && (
                         <span className="downloads__pill">
                           <Icon name="disk" size={11} />
                           {rate(job.speed)}
@@ -303,7 +396,7 @@ export function Downloads({
                 </span>
 
                 <span className="downloads__cell downloads__cell--kind">
-                  {KIND[job.kind].label}
+                  {label(job)}
                 </span>
 
                 <span className="downloads__cell downloads__cell--size">
@@ -332,12 +425,37 @@ export function Downloads({
                   >
                     <Icon name="close" size={14} />
                   </button>
+
+                  {owned.has(job.appName) && (
+                    <button
+                      className="downloads__control"
+                      onClick={(event) => {
+                        const game = owned.get(job.appName);
+
+                        if (game) {
+                          setMenu({
+                            game,
+                            rect: event.currentTarget.getBoundingClientRect()
+                          });
+                        }
+                      }}
+                      aria-label={`${job.title} options`}
+                    >
+                      <Icon name="more" size={14} />
+                    </button>
+                  )}
                 </span>
               </article>
             ))}
           </div>
         )}
       </section>
+
+      <ContextMenu
+        anchor={menu?.rect ?? null}
+        items={entries}
+        onClose={() => setMenu(null)}
+      />
     </div>
   );
 }

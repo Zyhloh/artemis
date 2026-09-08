@@ -1,22 +1,18 @@
 import {
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode
 } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { ContextMenu, type MenuEntry } from "@components/ContextMenu/ContextMenu";
-import { GameMenu } from "@components/GameMenu/GameMenu";
 import { Icon } from "@components/Icon/Icon";
-import { InstallModal } from "@components/InstallModal/InstallModal";
 import { useFlip } from "@hooks/useFlip";
 import { useLibrary } from "@hooks/useLibrary";
-import { createShortcut } from "@lib/library";
 import type { Account, DownloadJob, GameSession, LibraryGame } from "@/types";
 import { FilterPanel } from "./FilterPanel";
 import { GameCard } from "./GameCard";
+import { gameEntries } from "./menu";
 import {
   EMPTY_FILTERS,
   SORT_LABELS,
@@ -33,19 +29,16 @@ interface LibraryProps {
   account: Account | null;
   jobs: DownloadJob[];
   sessions: GameSession[];
-  onInstall: (
-    appName: string,
-    title: string,
-    path: string,
-    tags: string[]
-  ) => Promise<void>;
-  onImport: (appName: string, title: string, path: string) => Promise<void>;
   onRequestCancel: (job: DownloadJob) => void;
   onLaunch: (appName: string) => void;
   onRequestStop: (game: LibraryGame) => void;
-  onUpdate: (game: LibraryGame) => void;
   onVerify: (game: LibraryGame) => void;
   onUninstall: (game: LibraryGame) => void;
+  onComponents: (game: LibraryGame) => void;
+  onInstallRequest: (game: LibraryGame) => void;
+  onManage: (game: LibraryGame) => void;
+  onLocate: (game: LibraryGame) => void;
+  onShortcut: (game: LibraryGame) => void;
 }
 
 interface Anchored {
@@ -78,21 +71,20 @@ export function Library({
   account,
   jobs,
   sessions,
-  onInstall,
-  onImport,
   onRequestCancel,
   onLaunch,
   onRequestStop,
-  onUpdate,
   onVerify,
-  onUninstall
+  onUninstall,
+  onComponents,
+  onInstallRequest,
+  onManage,
+  onLocate,
+  onShortcut
 }: LibraryProps) {
   const { games, status, error, reload } = useLibrary(account);
-  const [installing, setInstalling] = useState<LibraryGame | null>(null);
-  const [managing, setManaging] = useState<LibraryGame | null>(null);
   const [menu, setMenu] = useState<Anchored | null>(null);
   const [sortAnchor, setSortAnchor] = useState<DOMRect | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [view, setView] = useState<View>(() =>
@@ -104,13 +96,6 @@ export function Library({
   const [panel, setPanel] = useState(() =>
     remembered(PANEL_KEY, ["open", "closed"], "closed") === "open"
   );
-
-  useEffect(() => {
-    if (!toast) return;
-
-    const timer = setTimeout(() => setToast(null), 3600);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   const chooseView = useCallback((next: View) => {
     setView(next);
@@ -142,117 +127,51 @@ export function Library({
 
   const primary = useCallback(
     (game: LibraryGame) => {
-      const state = resolveCard(game, jobs, sessions);
+      const state = resolveCard(game, jobs, sessions, games);
 
       if (state.busy && state.job) return onRequestCancel(state.job);
       if (state.running) return onRequestStop(game);
       if (state.playable) return onLaunch(game.appName);
-      if (state.installable) return setInstalling(game);
+      if (state.installable) return onInstallRequest(game);
     },
-    [jobs, sessions, onRequestCancel, onRequestStop, onLaunch]
+    [
+      games,
+      jobs,
+      sessions,
+      onRequestCancel,
+      onRequestStop,
+      onLaunch,
+      onInstallRequest
+    ]
   );
-
-  const locate = useCallback(
-    async (game: LibraryGame) => {
-      const picked = await open({
-        directory: true,
-        multiple: false,
-        title: `Locate the existing ${game.title} folder`
-      }).catch(() => null);
-
-      if (typeof picked === "string") void onImport(game.appName, game.title, picked);
-    },
-    [onImport]
-  );
-
-  const shortcut = useCallback((game: LibraryGame) => {
-    setToast(`Creating shortcut for ${game.title}…`);
-
-    createShortcut(game.appName)
-      .then(() => setToast(`${game.title} shortcut added to your desktop`))
-      .catch((cause) =>
-        setToast(
-          cause instanceof Error ? cause.message : "That shortcut could not be created"
-        )
-      );
-  }, []);
 
   const entries = useMemo((): MenuEntry[] => {
     if (!menu) return [];
 
     const { game } = menu;
-    const state = resolveCard(game, jobs, sessions);
-    const more: MenuEntry[] = [
-      "separator",
-      {
-        id: "more",
-        label: "More Options",
-        icon: "chevronRight",
-        run: () => setManaging(game)
-      }
-    ];
 
-    if (game.thirdParty) {
-      return [
-        {
-          id: "external",
-          label: `Managed by ${game.thirdParty}`,
-          icon: "external",
-          disabled: true,
-          run: () => undefined
-        },
-        ...more
-      ];
-    }
-
-    if (!game.installed) {
-      return [
-        {
-          id: "install",
-          label: "Install",
-          icon: "download",
-          disabled: state.busy,
-          run: () => setInstalling(game)
-        },
-        {
-          id: "locate",
-          label: "Locate Existing Install",
-          icon: "folder",
-          disabled: state.busy,
-          run: () => void locate(game)
-        },
-        ...more
-      ];
-    }
-
-    return [
-      {
-        id: "verify",
-        label: "Verify Files",
-        icon: "check",
-        disabled: state.busy || state.running || state.launching,
-        run: () => {
-          onVerify(game);
-          setToast(`Verifying ${game.title}`);
-        }
-      },
-      {
-        id: "shortcut",
-        label: "Create Shortcut",
-        icon: "link",
-        run: () => shortcut(game)
-      },
-      {
-        id: "uninstall",
-        label: "Uninstall",
-        icon: "trash",
-        danger: true,
-        disabled: state.busy || state.running || state.launching,
-        run: () => onUninstall(game)
-      },
-      ...more
-    ];
-  }, [menu, jobs, sessions, locate, shortcut, onVerify, onUninstall]);
+    return gameEntries(game, resolveCard(game, jobs, sessions, games), {
+      onInstall: onInstallRequest,
+      onLocate,
+      onVerify,
+      onComponents,
+      onShortcut,
+      onUninstall,
+      onMore: onManage
+    });
+  }, [
+    menu,
+    games,
+    jobs,
+    sessions,
+    onInstallRequest,
+    onLocate,
+    onVerify,
+    onComponents,
+    onShortcut,
+    onUninstall,
+    onManage
+  ]);
 
   const sortEntries = useMemo(
     (): MenuEntry[] =>
@@ -323,7 +242,7 @@ export function Library({
           <GameCard
             key={game.appName}
             game={game}
-            state={resolveCard(game, jobs, sessions)}
+            state={resolveCard(game, jobs, sessions, games)}
             view={view}
             onPrimary={primary}
             onMenu={(target, rect) =>
@@ -433,24 +352,6 @@ export function Library({
       <ContextMenu anchor={menu?.rect ?? null} items={entries} onClose={closeMenu} />
       <ContextMenu anchor={sortAnchor} items={sortEntries} onClose={closeSort} />
 
-      {toast && (
-        <div className="library__toast" role="status">
-          {toast}
-        </div>
-      )}
-
-      <GameMenu
-        game={managing}
-        onClose={() => setManaging(null)}
-        onUpdate={onUpdate}
-      />
-
-      <InstallModal
-        game={installing}
-        onInstall={onInstall}
-        onImport={onImport}
-        onClose={() => setInstalling(null)}
-      />
     </>
   );
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Icon, type IconName } from "@components/Icon/Icon";
 import { Modal } from "@components/Modal/Modal";
 import { getLaunchArgs, setLaunchArgs } from "@lib/games";
+import { installOptions } from "@lib/install";
 import { checkUpdates, revealFolder } from "@lib/library";
 import type { LaunchArgs, LibraryGame } from "@/types";
 import "./GameMenu.css";
@@ -10,6 +11,7 @@ interface GameMenuProps {
   game: LibraryGame | null;
   onClose: () => void;
   onUpdate: (game: LibraryGame) => void;
+  onComponents: (game: LibraryGame) => void;
 }
 
 interface Row {
@@ -33,11 +35,17 @@ const clean = (value: string) => value.replace(BLOCKED, "").slice(0, 512);
 const size = (bytes: number | null) =>
   bytes ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : null;
 
-export function GameMenu({ game, onClose, onUpdate }: GameMenuProps) {
+export function GameMenu({
+  game,
+  onClose,
+  onUpdate,
+  onComponents
+}: GameMenuProps) {
   const [checking, setChecking] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
   const [args, setArgs] = useState<LaunchArgs>({ enabled: false, value: "" });
+  const [components, setComponents] = useState(false);
 
   useEffect(() => {
     if (!game) {
@@ -53,6 +61,25 @@ export function GameMenu({ game, onClose, onUpdate }: GameMenuProps) {
     getLaunchArgs(game.appName)
       .then((stored) => {
         if (live) setArgs(stored);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      live = false;
+    };
+  }, [game]);
+
+  useEffect(() => {
+    if (!game?.installed) {
+      setComponents(false);
+      return;
+    }
+
+    let live = true;
+
+    installOptions(game.appName)
+      .then((found) => {
+        if (live) setComponents(found.length > 0);
       })
       .catch(() => undefined);
 
@@ -127,7 +154,18 @@ export function GameMenu({ game, onClose, onUpdate }: GameMenuProps) {
           hint: game.installPath ?? "",
           disabled: !game.installPath,
           run: reveal
-        }
+        },
+        ...(components
+          ? [
+              {
+                id: "components",
+                icon: "disk" as IconName,
+                label: "Modify Install",
+                hint: "Add or remove parts of this installation",
+                run: () => onComponents(game)
+              }
+            ]
+          : [])
       ]
     : [];
 

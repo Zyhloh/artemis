@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Icon } from "@components/Icon/Icon";
+import { ComponentList } from "@components/ComponentList/ComponentList";
 import { Modal } from "@components/Modal/Modal";
 import { useInstallOptions } from "@hooks/useInstallOptions";
 import { grantInstallPath, prepareInstallPath } from "@lib/library";
@@ -9,6 +9,7 @@ import "./InstallModal.css";
 
 interface InstallModalProps {
   game: LibraryGame | null;
+  base: LibraryGame | null;
   onInstall: (
     appName: string,
     title: string,
@@ -29,6 +30,7 @@ const gigabytes = (bytes: number) => {
 
 export function InstallModal({
   game,
+  base,
   onInstall,
   onImport,
   onClose,
@@ -107,6 +109,7 @@ export function InstallModal({
     }
   }, [game, path, tags, onInstall, onClose]);
 
+  const addon = game?.baseAppName != null;
   const blocked = access !== null && !access.writable;
   const canElevate = blocked && !access.elevated;
   const cramped = space !== null && needed > 0 && needed > space;
@@ -150,10 +153,21 @@ export function InstallModal({
               <span className="install__value">
                 <bdi className="install__pathtext">{path}</bdi>
               </span>
-              <button className="install__browse" onClick={() => void browse()}>
-                Browse
-              </button>
+              {!addon && (
+                <button
+                  className="install__browse"
+                  onClick={() => void browse()}
+                >
+                  Browse
+                </button>
+              )}
             </div>
+
+            {addon && (
+              <span className="install__space">
+                Installs into the {base?.title ?? "base game"} folder
+              </span>
+            )}
 
             <span
               className={`install__space${
@@ -170,39 +184,11 @@ export function InstallModal({
           {options.length > 0 && (
             <div className="install__field">
               <span className="install__label">Components</span>
-              <div className="install__list">
-                {options.map((option) => {
-                  const checked = selected.includes(option.id);
-
-                  return (
-                    <label
-                      className={`install__option${
-                        option.required ? " install__option--locked" : ""
-                      }`}
-                      key={option.id}
-                    >
-                      <input
-                        className="install__checkbox"
-                        type="checkbox"
-                        checked={checked || option.required}
-                        disabled={option.required}
-                        onChange={() => toggle(option.id)}
-                      />
-                      <span className="install__box" aria-hidden="true">
-                        <Icon name="check" size={11} strokeWidth={2.6} />
-                      </span>
-                      <span className="install__copy">
-                        <span className="install__name">{option.name}</span>
-                        {option.description && (
-                          <span className="install__description">
-                            {option.description}
-                          </span>
-                        )}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
+              <ComponentList
+                options={options}
+                selected={selected}
+                onToggle={toggle}
+              />
             </div>
           )}
 
@@ -222,13 +208,15 @@ export function InstallModal({
 
           {issue && <p className="install__issue">{issue}</p>}
 
-          <button
-            className="install__import"
-            onClick={() => void adopt()}
-            disabled={working}
-          >
-            Already installed? Import an existing folder
-          </button>
+          {!addon && (
+            <button
+              className="install__import"
+              onClick={() => void adopt()}
+              disabled={working}
+            >
+              Already installed? Import an existing folder
+            </button>
+          )}
 
           <div className="modal__actions">
             <button

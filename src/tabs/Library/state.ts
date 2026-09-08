@@ -33,11 +33,17 @@ export const SORT_LABELS: Record<Sort, string> = {
   za: "Title Z–A"
 };
 
-const ACTIVE: DownloadJob["stage"][] = ["preparing", "downloading", "paused"];
+const ACTIVE: DownloadJob["stage"][] = [
+  "preparing",
+  "verifying",
+  "downloading",
+  "paused"
+];
 
 export interface CardState {
   job: DownloadJob | undefined;
   busy: boolean;
+  requires: boolean;
   downloading: boolean;
   filled: number;
   launching: boolean;
@@ -54,7 +60,8 @@ const percent = (value: number) => `${Math.round(value)}%`;
 export function resolveCard(
   game: LibraryGame,
   jobs: DownloadJob[],
-  sessions: GameSession[]
+  sessions: GameSession[],
+  library: LibraryGame[]
 ): CardState {
   const job = jobs.find(
     (entry) => entry.appName === game.appName && ACTIVE.includes(entry.stage)
@@ -66,8 +73,13 @@ export function resolveCard(
   const session = sessions.find((entry) => entry.appName === game.appName);
   const launching = session?.stage === "launching";
   const running = session?.stage === "running";
+  const base = game.baseAppName
+    ? library.find((entry) => entry.appName === game.baseAppName)
+    : undefined;
+
+  const requires = Boolean(game.baseAppName) && !base?.installed;
   const playable = game.installed && !busy && !session;
-  const installable = !game.installed && !busy && !game.thirdParty;
+  const installable = !game.installed && !busy && !game.thirdParty && !requires;
 
   const glyph: IconName = busy || running ? "close" : playable ? "play" : "download";
 
@@ -79,11 +91,17 @@ export function resolveCard(
     primary = "External";
   }
 
+  if (requires && !game.installed) {
+    status = `Requires ${base?.title ?? "the base game"}`;
+    primary = "Unavailable";
+  }
+
   if (busy && job) {
     if (job.stage === "paused") status = "Paused";
     else if (job.stage === "preparing") status = "Preparing…";
     else if (job.kind === "verify") status = "Verifying files…";
     else if (job.kind === "import") status = "Importing…";
+    else if (job.stage === "verifying") status = "Verifying files…";
     else status = `Downloading · ${percent(job.percent)}`;
 
     primary = "Cancel";
@@ -102,6 +120,7 @@ export function resolveCard(
   return {
     job,
     busy,
+    requires,
     downloading,
     filled,
     launching,

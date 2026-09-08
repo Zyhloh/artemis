@@ -17,6 +17,8 @@ const ART_DIR: &str = "art";
 const EVENT: &str = "library:changed";
 const STALE_AFTER: Duration = Duration::from_secs(10 * 60);
 const ART_PARALLEL: usize = 6;
+const LAUNCHABLE: &str = "addons/launchable";
+const SOFTWARE: &str = "software";
 const MEASURE_AFTER: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -35,6 +37,7 @@ pub struct Game {
     pub developer: Option<String>,
     pub namespace: Option<String>,
     pub catalog_item_id: Option<String>,
+    pub base_app_name: Option<String>,
     pub build_version: Option<String>,
     pub kind: Kind,
     pub platforms: Vec<String>,
@@ -47,6 +50,7 @@ pub struct Game {
     pub install_path: Option<String>,
     pub install_size: Option<u64>,
     pub installed_version: Option<String>,
+    pub install_tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -135,6 +139,12 @@ struct Installed {
     install_size: Option<u64>,
     #[serde(default)]
     version: Option<String>,
+    #[serde(default)]
+    is_dlc: bool,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    install_tags: Vec<String>,
 }
 
 fn image(images: &[Value], wanted: &[&str]) -> Option<String> {
@@ -250,6 +260,153 @@ fn categories(metadata: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn addon_base(metadata: &Value) -> Option<String> {
+    metadata
+        .get("mainGameItem")?
+        .get("releaseInfo")?
+        .as_array()?
+        .first()?
+        .get("appId")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+fn addon_app(paths: &[String]) -> bool {
+    paths.iter().any(|path| path == LAUNCHABLE) && paths.iter().any(|path| path == SOFTWARE)
+}
+
+fn entry_of(handle: &AppHandle, app_name: &str) -> Option<Value> {
+    let dir = legendary::config_dir(handle).ok()?.join("metadata");
+
+    read_json(&dir.join(format!("{app_name}.json"))).or_else(|| {
+        std::fs::read_dir(&dir)
+            .ok()?
+            .flatten()
+            .map(|file| file.path())
+            .filter_map(|path| read_json(&path))
+            .find(|entry| entry.get("app_name").and_then(Value::as_str) == Some(app_name))
+    })
+}
+
+pub fn base_of(handle: &AppHandle, app_name: &str) -> Option<String> {
+    let entry = entry_of(handle, app_name)?;
+    let metadata = entry.get("metadata")?;
+
+    addon_app(&categories(metadata))
+        .then(|| addon_base(metadata))
+        .flatten()
+}
+
+pub fn addons_of(handle: &AppHandle, base: &str) -> Vec<String> {
+    installed(handle)
+        .into_iter()
+        .filter(|item| item.is_dlc)
+        .map(|item| item.app_name)
+        .filter(|app_name| base_of(handle, app_name).as_deref() == Some(base))
+        .collect()
+}
+
+pub fn title_of(handle: &AppHandle, app_name: &str) -> Option<String> {
+    installed(handle)
+        .into_iter()
+        .find(|item| item.app_name == app_name)
+        .and_then(|item| item.title)
+}
+
+async fn manifest_files(handle: &AppHandle, app_name: &str) -> Vec<String> {
+    let Ok(output) = legendary::run(handle, &["list-files", app_name, "--json"]).await else {
+        return Vec::new();
+    };
+
+    if output.code != Some(0) {
+        return Vec::new();
+    }
+
+    serde_json::from_str::<Vec<Value>>(&output.stdout)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| text(entry, &["filename"]))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub async fn purge_addon(handle: &AppHandle, app_name: &str) {
+    let Some(base) = base_of(handle, app_name) else {
+        return;
+    };
+
+    let Some(root) = base_path(handle, &base) else {
+        return;
+    };
+
+    let files = manifest_files(handle, app_name).await;
+    let shared = manifest_files(handle, &base).await;
+
+    if files.is_empty() || shared.is_empty() {
+        return;
+    }
+
+    let keep: HashSet<String> = shared.iter().map(|name| name.to_lowercase()).collect();
+    let root = PathBuf::from(root);
+    let mut dirs: HashSet<PathBuf> = HashSet::new();
+
+    for file in files {
+        if keep.contains(&file.to_lowercase()) {
+            continue;
+        }
+
+        if file.split(['\\', '/']).any(|part| part == "..") {
+            continue;
+        }
+
+        let target = root.join(&file);
+
+        if !target.starts_with(&root) {
+            continue;
+        }
+
+        let _ = std::fs::remove_file(&target);
+
+        let mut cursor = target.parent().map(Path::to_path_buf);
+
+        while let Some(dir) = cursor {
+            if dir == root {
+                break;
+            }
+
+            cursor = dir.parent().map(Path::to_path_buf);
+            dirs.insert(dir);
+        }
+    }
+
+    let mut ordered: Vec<PathBuf> = dirs.into_iter().collect();
+    ordered.sort_by_key(|dir| std::cmp::Reverse(dir.components().count()));
+
+    for dir in ordered {
+        let _ = std::fs::remove_dir(dir);
+    }
+}
+
+pub fn processes_of(handle: &AppHandle, app_name: &str) -> Vec<String> {
+    let Some(entry) = entry_of(handle, app_name) else {
+        return Vec::new();
+    };
+
+    let metadata = entry.get("metadata").unwrap_or(&Value::Null);
+
+    text(metadata, &["customAttributes", "DlcProcessNames", "value"])
+        .map(|names| {
+            names
+                .split(',')
+                .map(|name| name.trim().to_lowercase())
+                .filter(|name| !name.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn kind_of(paths: &[String]) -> Kind {
     let has = |wanted: &str| paths.iter().any(|path| path == wanted);
 
@@ -274,12 +431,11 @@ fn listable(entry: &Value, owned: &HashSet<String>) -> bool {
     }
 
     let metadata = entry.get("metadata").unwrap_or(&Value::Null);
+    let paths = categories(metadata);
 
-    if metadata.get("mainGameItem").is_some() {
+    if metadata.get("mainGameItem").is_some() && !addon_app(&paths) {
         return false;
     }
-
-    let paths = categories(metadata);
 
     !paths.iter().any(|path| path == "engines" || path.starts_with("engines/"))
 }
@@ -361,8 +517,10 @@ fn game(
         .cloned()
         .unwrap_or_default();
 
+    let base_app_name = addon_base(metadata);
     let local = installs.iter().find(|item| item.app_name == app_name);
-    let footprint = local.and_then(|item| item.install_path.as_deref()).map(|root| {
+
+    let shared = |root: &str| {
         let key = root_key(root);
 
         sizes.get(&key).copied().unwrap_or_else(|| {
@@ -376,7 +534,13 @@ fn game(
                 .filter_map(|item| item.install_size)
                 .sum::<u64>()
         })
-    });
+    };
+
+    let footprint = match local {
+        Some(item) if item.is_dlc => item.install_size,
+        Some(item) => item.install_path.as_deref().map(shared),
+        None => None,
+    };
 
     let tall = image(&images, &ART);
     let wide = image(&images, &WIDE);
@@ -397,6 +561,7 @@ fn game(
         developer: text(metadata, &["developer"]),
         namespace: text(metadata, &["namespace"]),
         catalog_item_id: text(metadata, &["id"]),
+        base_app_name,
         build_version: text(entry, &["asset_infos", "Windows", "build_version"]),
         kind: kind_of(&categories(metadata)),
         platforms,
@@ -412,6 +577,7 @@ fn game(
         install_path: local.and_then(|item| item.install_path.clone()),
         install_size: footprint.filter(|total| *total > 0),
         installed_version: local.and_then(|item| item.version.clone()),
+        install_tags: local.map(|item| item.install_tags.clone()).unwrap_or_default(),
         app_name,
     })
 }
@@ -581,6 +747,10 @@ pub fn library_list(handle: AppHandle, state: State<'_, Library>) -> Snapshot {
     }
 }
 
+pub fn refresh_local(handle: &AppHandle) {
+    publish(handle, local(handle), false, None);
+}
+
 #[tauri::command]
 pub fn library_refresh(handle: AppHandle) {
     publish(&handle, local(&handle), true, None);
@@ -649,9 +819,24 @@ pub(crate) fn default_install_root() -> PathBuf {
 }
 
 #[tauri::command]
-pub async fn install_default_path(handle: AppHandle, title: String) -> Result<String> {
+pub async fn install_default_path(
+    handle: AppHandle,
+    app_name: String,
+    title: String,
+) -> Result<String> {
+    if let Some(root) = base_of(&handle, &app_name).and_then(|base| base_path(&handle, &base)) {
+        return Ok(root);
+    }
+
     let path = crate::settings::install_root(&handle).join(sanitise(&title));
     Ok(path.to_string_lossy().into_owned())
+}
+
+pub fn base_path(handle: &AppHandle, app_name: &str) -> Option<String> {
+    installed(handle)
+        .into_iter()
+        .find(|item| item.app_name == app_name)
+        .and_then(|item| item.install_path)
 }
 
 #[tauri::command]
@@ -708,17 +893,31 @@ pub async fn library_updates(handle: AppHandle) -> Result<Vec<Status>> {
     let entries: Vec<Value> = serde_json::from_str(&installed.stdout)?;
     let catalogue: Vec<Value> = serde_json::from_str(&library.stdout)?;
 
-    let latest = |app_name: &str, platform: &str| -> Option<String> {
-        let game = catalogue
+    let listed: HashSet<String> = local(&handle)
+        .into_iter()
+        .map(|game| game.app_name)
+        .collect();
+
+    let find = |app_name: &str| {
+        catalogue
             .iter()
-            .find(|game| text(game, &["app_name"]).as_deref() == Some(app_name))?;
+            .find(|game| text(game, &["app_name"]).as_deref() == Some(app_name))
+    };
+
+    let latest = |app_name: &str, platform: &str| -> Option<String> {
+        let game = find(app_name).or_else(|| find(&base_of(&handle, app_name)?))?;
 
         text(game, &["asset_infos", platform, "build_version"])
     };
 
     Ok(entries
         .iter()
-        .filter(|entry| entry.get("is_dlc").and_then(Value::as_bool) != Some(true))
+        .filter(|entry| {
+            entry
+                .get("app_name")
+                .and_then(Value::as_str)
+                .is_some_and(|app_name| listed.contains(app_name))
+        })
         .filter_map(|entry| {
             let app_name = entry.get("app_name")?.as_str()?.to_owned();
             let version = text(entry, &["version"]).unwrap_or_default();
