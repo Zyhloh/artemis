@@ -216,6 +216,7 @@
 .downloads__kind {
   padding: 2px 7px;
   flex-shrink: 0;
+  white-space: nowrap;
   border-radius: 999px;
   background: var(--bg-active);
   font-size: 10.5px;
@@ -286,6 +287,7 @@
   align-items: center;
   gap: 5px;
   padding: 2px 8px;
+  white-space: nowrap;
   border-radius: 999px;
   background: var(--bg-hover);
   font-size: 11px;
@@ -370,6 +372,7 @@
 
 .downloads__cell--kind {
   width: 60px;
+  white-space: nowrap;
 }
 
 .downloads__cell--size {
@@ -380,6 +383,7 @@
 .downloads__cell--time {
   width: 118px;
   text-align: right;
+  white-space: nowrap;
 }
 
 @keyframes downloads-rise {
