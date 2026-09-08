@@ -3,10 +3,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode
 } from "react";
 import { ContextMenu, type MenuEntry } from "@components/ContextMenu/ContextMenu";
 import { Icon } from "@components/Icon/Icon";
+import { useColumns } from "@hooks/useColumns";
 import { useFlip } from "@hooks/useFlip";
 import { useLibrary } from "@hooks/useLibrary";
 import type { Account, DownloadJob, GameSession, LibraryGame } from "@/types";
@@ -123,7 +125,13 @@ export function Library({
     [games, query, filters, sort]
   );
 
-  useFlip(grid, `${view}:${shown.map((game) => game.appName).join(",")}`);
+  const columns = useColumns();
+
+  useFlip(
+    grid,
+    `${view}:${columns}:${shown.map((game) => game.appName).join(",")}`,
+    false
+  );
 
   const primary = useCallback(
     (game: LibraryGame) => {
@@ -237,6 +245,11 @@ export function Library({
       <div
         className={view === "grid" ? "library__grid" : "library__table"}
         ref={grid}
+        style={
+          view === "grid"
+            ? ({ "--library-columns": columns } as CSSProperties)
+            : undefined
+        }
       >
         {shown.map((game) => (
           <GameCard

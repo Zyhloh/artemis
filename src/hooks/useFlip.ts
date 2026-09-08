@@ -14,7 +14,11 @@ const still = () =>
   typeof window !== "undefined" &&
   window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-export function useFlip(container: RefObject<HTMLElement | null>, signal: unknown) {
+export function useFlip(
+  container: RefObject<HTMLElement | null>,
+  signal: unknown,
+  observe = true
+) {
   const positions = useRef(new Map<string, { left: number; top: number }>());
   const running = useRef(new Set<Animation>());
   const frame = useRef(0);
@@ -95,7 +99,7 @@ export function useFlip(container: RefObject<HTMLElement | null>, signal: unknow
 
   useEffect(() => {
     const root = container.current;
-    if (!root || typeof ResizeObserver !== "function") return;
+    if (!root || !observe || typeof ResizeObserver !== "function") return;
 
     const observer = new ResizeObserver(pass);
     observer.observe(root);
@@ -106,5 +110,5 @@ export function useFlip(container: RefObject<HTMLElement | null>, signal: unknow
       for (const animation of running.current) animation.cancel();
       running.current.clear();
     };
-  }, [container]);
+  }, [container, observe]);
 }

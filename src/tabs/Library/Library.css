@@ -229,9 +229,8 @@
 
 .library__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 158px);
+  grid-template-columns: repeat(var(--library-columns, 6), minmax(0, 1fr));
   gap: 22px 18px;
-  justify-content: space-between;
   align-content: start;
 }
 
