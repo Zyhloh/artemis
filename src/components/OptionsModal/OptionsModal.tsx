@@ -116,14 +116,17 @@ export function OptionsModal({ game, onApply, onClose }: OptionsModalProps) {
       <h2 className="modal__title">{game?.title ?? "Components"}</h2>
 
       {status === "loading" ? (
-        <div className="options__loading">
+        <div className="options__state">
           <span className="modal__spinner" />
           <p className="modal__text">Loading components…</p>
         </div>
       ) : options.length === 0 ? (
-        <p className="modal__text">
-          This game does not offer optional components.
-        </p>
+        <div className="options__state">
+          <p className="modal__text">
+            {game?.title ?? "This game"} installs as a single package, so there
+            is nothing to add or remove.
+          </p>
+        </div>
       ) : (
         <>
           <p className="options__intro">

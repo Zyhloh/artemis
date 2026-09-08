@@ -91,6 +91,12 @@ export async function installOptions(appName: string): Promise<InstallOption[]> 
   }));
 }
 
+export function hasComponents(appName: string): boolean | undefined {
+  const payload = catalogue.get(appName);
+
+  return payload ? Object.keys(payload).length > 0 : undefined;
+}
+
 export function selectedOptions(appName: string, installed: string[]): string[] {
   const payload = catalogue.get(appName);
 

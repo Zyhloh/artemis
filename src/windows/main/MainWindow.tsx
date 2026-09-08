@@ -21,6 +21,7 @@ import { useFriends } from "@hooks/useFriends";
 import { useGames } from "@hooks/useGames";
 import { useLibrary } from "@hooks/useLibrary";
 import { useLockers } from "@hooks/useLockers";
+import { installOptions } from "@lib/install";
 import { createShortcut, refreshLibrary, uninstallGame } from "@lib/library";
 import { watchTray } from "@lib/tray";
 import type { DownloadJob, LibraryGame } from "@/types";
@@ -131,6 +132,14 @@ export function MainWindow() {
     },
     [downloads]
   );
+
+  useEffect(() => {
+    for (const game of library) {
+      if (game.installed && !game.thirdParty) {
+        void installOptions(game.appName).catch(() => undefined);
+      }
+    }
+  }, [library]);
 
   useEffect(() => {
     if (!toast) return;

@@ -1,4 +1,5 @@
 import type { MenuEntry } from "@components/ContextMenu/ContextMenu";
+import { hasComponents } from "@lib/install";
 import type { LibraryGame } from "@/types";
 import type { CardState } from "./state";
 
@@ -99,7 +100,7 @@ export function gameEntries(
     });
   }
 
-  if (handlers.onComponents) {
+  if (handlers.onComponents && hasComponents(game.appName)) {
     entries.push({
       id: "components",
       label: "Modify Install",
