@@ -30,6 +30,11 @@ export interface TabProps {
   onUpdate: (game: LibraryGame) => void;
   onVerify: (game: LibraryGame) => void;
   onUninstall: (game: LibraryGame) => void;
+  onComponents: (game: LibraryGame) => void;
+  onInstallRequest: (game: LibraryGame) => void;
+  onManage: (game: LibraryGame) => void;
+  onLocate: (game: LibraryGame) => void;
+  onShortcut: (game: LibraryGame) => void;
 }
 
 export interface TabEntry {

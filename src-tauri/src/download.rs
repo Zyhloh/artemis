@@ -15,6 +15,7 @@ const FAILURE_LOG: &str = "last-failure.log";
 const RECENT_LINES: usize = 80;
 const HISTORY_LIMIT: usize = 100;
 const DONE_MARKER: &str = "Finished installation process";
+const RESUME_MARKER: &str = "Found previously interrupted download";
 const ERROR_MARKERS: [&str; 3] = ["ERROR: ", "CRITICAL: ", "! Failure: "];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,6 +30,7 @@ pub enum Kind {
 #[serde(rename_all = "lowercase")]
 pub enum Stage {
     Preparing,
+    Verifying,
     Downloading,
     Paused,
     Done,
@@ -59,12 +61,18 @@ pub struct Job {
     pub tags: Vec<String>,
     pub kind: Kind,
     pub fresh: bool,
+    #[serde(default)]
+    pub addon: bool,
     pub missing: u32,
     pub mismatched: u32,
     pub stage: Stage,
     pub percent: f64,
     pub downloaded: f64,
     pub written: f64,
+    #[serde(default)]
+    pub download_size: f64,
+    #[serde(default)]
+    pub install_size: f64,
     pub speed: f64,
     pub disk_write: f64,
     pub disk_read: f64,
@@ -84,6 +92,7 @@ impl Job {
         tags: Vec<String>,
         kind: Kind,
         fresh: bool,
+        addon: bool,
     ) -> Self {
         let started_at = now();
 
@@ -95,12 +104,15 @@ impl Job {
             tags,
             kind,
             fresh,
+            addon,
             missing: 0,
             mismatched: 0,
             stage: Stage::Preparing,
             percent: 0.0,
             downloaded: 0.0,
             written: 0.0,
+            download_size: 0.0,
+            install_size: 0.0,
             speed: 0.0,
             disk_write: 0.0,
             disk_read: 0.0,
@@ -202,8 +214,12 @@ fn tail(line: &str, marker: &str) -> Option<String> {
 }
 
 fn absorb(job: &mut Job, line: &str) {
+    if line.contains(RESUME_MARKER) {
+        job.stage = Stage::Verifying;
+    }
+
     if line.contains("Verification progress:") {
-        job.stage = Stage::Downloading;
+        job.stage = Stage::Verifying;
 
         if let Some(chunk) = tail(line, "Verification progress: ") {
             let counts = chunk.split(" (").next().unwrap_or_default();
@@ -242,6 +258,14 @@ fn absorb(job: &mut Job, line: &str) {
         job.written = number(&value);
     }
 
+    if let Some(value) = between(line, "Install size: ", " MiB") {
+        job.install_size = number(&value);
+    }
+
+    if let Some(value) = between(line, "Download size: ", " MiB") {
+        job.download_size = number(&value);
+    }
+
     if line.contains("+ Download") {
         if let Some(value) = between(line, "- ", " MiB/s (raw)") {
             job.speed = number(&value);
@@ -272,6 +296,10 @@ fn arguments(job: &Job) -> Vec<String> {
             job.app_name.clone(),
             job.path.clone(),
         ];
+    }
+
+    if job.addon {
+        return vec!["-y".to_owned(), "install".to_owned(), job.app_name.clone()];
     }
 
     let target = Path::new(&job.path);
@@ -446,6 +474,7 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
                                             Vec::new(),
                                             Kind::Install,
                                             false,
+                                            job.addon,
                                         ));
                                     }
                                 } else if job.kind == Kind::Verify {
@@ -497,13 +526,20 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
                     }
 
                     let mut pin = false;
+                    let mut follow: Vec<Job> = Vec::new();
 
                     if let Some(job) = finished {
                         pin = job.kind == Kind::Install && job.fresh && job.stage == Stage::Done;
+
+                        if job.kind == Kind::Install && !job.addon && job.stage == Stage::Done {
+                            follow = addons(&sink, &job);
+                        }
+
                         sink.state::<Queue>().archive(job);
                     }
 
                     publish(&sink);
+                    crate::library::refresh_local(&sink);
 
                     if pin && crate::settings::load(&sink).auto_shortcuts {
                         match crate::shortcut::create(&sink, &app_name) {
@@ -516,6 +552,10 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
                         let _ = launch(&sink, job);
                     }
 
+                    for job in follow {
+                        let _ = launch(&sink, job);
+                    }
+
                     break;
                 }
                 _ => {}
@@ -524,6 +564,26 @@ fn launch(handle: &AppHandle, job: Job) -> Result<()> {
     });
 
     Ok(())
+}
+
+fn addons(handle: &AppHandle, job: &Job) -> Vec<Job> {
+    crate::library::addons_of(handle, &job.app_name)
+        .into_iter()
+        .map(|app_name| {
+            let title = crate::library::title_of(handle, &app_name)
+                .unwrap_or_else(|| app_name.clone());
+
+            Job::new(
+                app_name,
+                title,
+                job.path.clone(),
+                Vec::new(),
+                Kind::Install,
+                false,
+                true,
+            )
+        })
+        .collect()
 }
 
 fn settle(path: &str, title: &str) -> String {
@@ -582,11 +642,12 @@ pub async fn download_start(
     }
 
     let fresh = !installed(&handle, &app_name);
+    let addon = crate::library::base_of(&handle, &app_name).is_some();
     let path = settle(&path, &title);
 
     launch(
         &handle,
-        Job::new(app_name, title, path, tags, Kind::Install, fresh),
+        Job::new(app_name, title, path, tags, Kind::Install, fresh, addon),
     )
 }
 
@@ -609,7 +670,15 @@ pub async fn download_verify(
 
     launch(
         &handle,
-        Job::new(app_name, title, String::new(), Vec::new(), Kind::Verify, false),
+        Job::new(
+            app_name,
+            title,
+            String::new(),
+            Vec::new(),
+            Kind::Verify,
+            false,
+            false,
+        ),
     )
 }
 
@@ -633,7 +702,7 @@ pub async fn download_import(
 
     launch(
         &handle,
-        Job::new(app_name, title, path, Vec::new(), Kind::Import, false),
+        Job::new(app_name, title, path, Vec::new(), Kind::Import, false, false),
     )
 }
 
@@ -716,6 +785,7 @@ pub async fn download_resume(handle: AppHandle, app_name: String) -> Result<()> 
         job.tags.clone(),
         job.kind,
         job.fresh && !installed(&handle, &job.app_name),
+        job.addon,
     );
 
     launch(
@@ -765,7 +835,11 @@ pub async fn download_cancel(handle: AppHandle, app_name: String) -> Result<()> 
     if let Some(mut job) = job {
         if job.fresh && job.kind == Kind::Install {
             let _ = legendary::run(&handle, &["-y", "uninstall", &job.app_name]).await;
-            discard(&job.path);
+
+            match job.addon {
+                true => crate::library::purge_addon(&handle, &job.app_name).await,
+                false => discard(&job.path),
+            }
         }
 
         job.stage = Stage::Failed;

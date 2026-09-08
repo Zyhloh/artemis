@@ -254,7 +254,8 @@
   background: var(--text-muted);
 }
 
-.downloads__fill--preparing {
+.downloads__fill--preparing,
+.downloads__fill--verifying {
   background: var(--text-dim);
 }
 

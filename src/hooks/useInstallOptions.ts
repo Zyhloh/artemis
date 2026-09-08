@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { installOptions, installTags } from "@lib/install";
+import { installOptions, installTags, selectedOptions } from "@lib/install";
 import {
   defaultInstallPath,
   installManifest,
@@ -11,7 +11,8 @@ import type {
   InstallOption,
   InstallStatus,
   LibraryGame,
-  PathStatus
+  PathStatus,
+  TagSize
 } from "@/types";
 
 export function useInstallOptions(game: LibraryGame | null) {
@@ -29,18 +30,29 @@ export function useInstallOptions(game: LibraryGame | null) {
     let live = true;
     setStatus("loading");
 
+    const settled = game.installed && game.installPath;
+
     const load = async () => {
       const [found, suggested, sizes] = await Promise.all([
         installOptions(game.appName).catch(() => []),
-        defaultInstallPath(game.title).catch(() => ""),
+        settled
+          ? Promise.resolve(game.installPath ?? "")
+          : defaultInstallPath(game.appName, game.title).catch(() => ""),
         installManifest(game.appName).catch(() => null)
       ]);
 
       if (!live) return;
 
+      const owned = game.installTags ?? [];
+
+      const current =
+        game.installed && owned.length
+          ? selectedOptions(game.appName, owned)
+          : found.filter((entry) => entry.required).map((entry) => entry.id);
+
       setManifest(sizes);
       setOptions(found);
-      setSelected(found.filter((entry) => entry.required).map((entry) => entry.id));
+      setSelected(current);
       setPath(suggested);
       setStatus("ready");
     };
@@ -53,7 +65,7 @@ export function useInstallOptions(game: LibraryGame | null) {
   }, [game]);
 
   const inspect = useCallback(async () => {
-    if (!path) return;
+    if (!path || game?.installed) return;
 
     const [result, free] = await Promise.all([
       probeInstallPath(path).catch(() => null),
@@ -62,7 +74,7 @@ export function useInstallOptions(game: LibraryGame | null) {
 
     if (result) setAccess(result);
     setSpace(free);
-  }, [path]);
+  }, [path, game]);
 
   useEffect(() => {
     void inspect();
@@ -78,27 +90,28 @@ export function useInstallOptions(game: LibraryGame | null) {
 
   const tags = game ? installTags(game.appName, selected) : [];
 
-  const download = manifest
-    ? tags.reduce(
-        (total, tag) =>
-          total +
-          (manifest.tags.find((entry) => entry.tag === tag)?.download ?? 0),
-        0
-      )
-    : 0;
+  const measure = (pick: (entry: TagSize) => number, whole: number) => {
+    if (!manifest) return 0;
+    if (!tags.length) return whole;
 
-  const needed = manifest
-    ? tags.reduce(
-        (total, tag) =>
-          total + (manifest.tags.find((entry) => entry.tag === tag)?.disk ?? 0),
-        0
-      )
-    : 0;
+    return tags.reduce((total, tag) => {
+      const entry = manifest.tags.find((size) => size.tag === tag);
+      return total + (entry ? pick(entry) : 0);
+    }, 0);
+  };
+
+  const download = measure(
+    (entry) => entry.download,
+    manifest?.downloadSize ?? 0
+  );
+
+  const needed = measure((entry) => entry.disk, manifest?.diskSize ?? 0);
 
   return {
     options,
     selected,
     tags,
+    manifest,
     download,
     needed,
     space,

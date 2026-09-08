@@ -1,22 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   AccountModal,
   BusyModal,
   ConfirmModal,
   FriendsPanel,
+  GameMenu,
+  InstallModal,
   NavRail,
   SwitchAccountModal,
   TitleBar,
   type NavRailGroup
 } from "@components/index";
+import { OptionsModal } from "@components/OptionsModal/OptionsModal";
 import { ALL_TABS, FOOTER_GROUP, TAB_GROUPS, type TabGroup } from "@tabs/registry";
 import { useAccount } from "@hooks/useAccount";
 import { useDownloads } from "@hooks/useDownloads";
 import { useEpicSession } from "@hooks/useEpicSession";
 import { useFriends } from "@hooks/useFriends";
 import { useGames } from "@hooks/useGames";
+import { useLibrary } from "@hooks/useLibrary";
 import { useLockers } from "@hooks/useLockers";
-import { refreshLibrary, uninstallGame } from "@lib/library";
+import { createShortcut, refreshLibrary, uninstallGame } from "@lib/library";
 import { watchTray } from "@lib/tray";
 import type { DownloadJob, LibraryGame } from "@/types";
 import "./MainWindow.css";
@@ -54,6 +59,7 @@ export function MainWindow() {
 
   const downloads = useDownloads();
   const games = useGames(account);
+  const { games: library } = useLibrary(account);
   const lockers = useLockers(accounts);
   const { session, status: sessionStatus } = useEpicSession(account);
   const friends = useFriends(session);
@@ -71,8 +77,67 @@ export function MainWindow() {
   const [stopping, setStopping] = useState<LibraryGame | null>(null);
   const [removing, setRemoving] = useState<LibraryGame | null>(null);
   const [erasing, setErasing] = useState<LibraryGame | null>(null);
+  const [editing, setEditing] = useState<LibraryGame | null>(null);
+  const [installing, setInstalling] = useState<LibraryGame | null>(null);
+  const [managing, setManaging] = useState<LibraryGame | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [eraseError, setEraseError] = useState<string | null>(null);
   const settled = useRef(new Set<string>());
+
+  const update = useCallback(
+    (game: LibraryGame) =>
+      void downloads.start(
+        game.appName,
+        game.title,
+        game.installPath ?? "",
+        []
+      ),
+    [downloads]
+  );
+
+  const locate = useCallback(
+    async (game: LibraryGame) => {
+      const picked = await open({
+        directory: true,
+        multiple: false,
+        title: `Locate the existing ${game.title} folder`
+      }).catch(() => null);
+
+      if (typeof picked === "string") {
+        void downloads.adopt(game.appName, game.title, picked);
+      }
+    },
+    [downloads]
+  );
+
+  const shortcut = useCallback((game: LibraryGame) => {
+    setToast(`Creating shortcut for ${game.title}…`);
+
+    createShortcut(game.appName)
+      .then(() => setToast(`${game.title} shortcut added to your desktop`))
+      .catch((cause) =>
+        setToast(
+          cause instanceof Error
+            ? cause.message
+            : "That shortcut could not be created"
+        )
+      );
+  }, []);
+
+  const verify = useCallback(
+    (game: LibraryGame) => {
+      void downloads.verify(game.appName, game.title);
+      setToast(`Verifying ${game.title}`);
+    },
+    [downloads]
+  );
+
+  useEffect(() => {
+    if (!toast) return;
+
+    const timer = setTimeout(() => setToast(null), 3600);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   useEffect(() => {
     let changed = false;
@@ -177,16 +242,14 @@ export function MainWindow() {
               onNavigate={setActive}
               onLaunch={games.launch}
               onRequestStop={setStopping}
-              onUpdate={(game) =>
-                void downloads.start(
-                  game.appName,
-                  game.title,
-                  game.installPath ?? "",
-                  []
-                )
-              }
-              onVerify={(game) => void downloads.verify(game.appName, game.title)}
+              onUpdate={update}
+              onVerify={verify}
               onUninstall={setRemoving}
+              onComponents={setEditing}
+              onInstallRequest={setInstalling}
+              onManage={setManaging}
+              onLocate={(game) => void locate(game)}
+              onShortcut={shortcut}
             />
           </div>
         </main>
@@ -309,6 +372,32 @@ export function MainWindow() {
           setErasing(null);
           setEraseError(null);
         }}
+      />
+
+      <InstallModal
+        game={installing}
+        base={
+          library.find((entry) => entry.appName === installing?.baseAppName) ??
+          null
+        }
+        onInstall={downloads.start}
+        onImport={downloads.adopt}
+        onClose={() => setInstalling(null)}
+      />
+
+      <GameMenu
+        game={managing}
+        onClose={() => setManaging(null)}
+        onUpdate={update}
+        onComponents={setEditing}
+      />
+
+      {toast && <p className="window__toast">{toast}</p>}
+
+      <OptionsModal
+        game={editing}
+        onApply={downloads.start}
+        onClose={() => setEditing(null)}
       />
 
       <AccountModal

@@ -60,6 +60,7 @@ export interface LibraryGame {
   developer: string | null;
   namespace: string | null;
   catalogItemId: string | null;
+  baseAppName: string | null;
   buildVersion: string | null;
   kind: LibraryKind;
   platforms: string[];
@@ -72,6 +73,7 @@ export interface LibraryGame {
   installPath: string | null;
   installSize: number | null;
   installedVersion: string | null;
+  installTags: string[];
 }
 
 export interface LibrarySnapshot {
@@ -97,6 +99,7 @@ export type InstallStatus = "loading" | "ready" | "error";
 
 export type DownloadStage =
   | "preparing"
+  | "verifying"
   | "downloading"
   | "paused"
   | "done"
@@ -118,6 +121,8 @@ export interface DownloadJob {
   percent: number;
   downloaded: number;
   written: number;
+  downloadSize: number;
+  installSize: number;
   speed: number;
   diskWrite: number;
   diskRead: number;

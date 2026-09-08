@@ -27,8 +27,8 @@ export const libraryAccount = () => invoke<string | null>("library_account");
 
 export const signOutLibrary = () => invoke<void>("library_sign_out");
 
-export const defaultInstallPath = (title: string) =>
-  invoke<string>("install_default_path", { title });
+export const defaultInstallPath = (appName: string, title: string) =>
+  invoke<string>("install_default_path", { appName, title });
 
 export const prepareInstallPath = (path: string) =>
   invoke<string>("install_prepare_path", { path });

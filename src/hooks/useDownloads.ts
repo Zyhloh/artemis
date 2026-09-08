@@ -13,7 +13,12 @@ import {
 } from "@lib/downloads";
 import type { DownloadJob } from "@/types";
 
-const ACTIVE: DownloadJob["stage"][] = ["preparing", "downloading", "paused"];
+const ACTIVE: DownloadJob["stage"][] = [
+  "preparing",
+  "verifying",
+  "downloading",
+  "paused"
+];
 
 export function useDownloads() {
   const [jobs, setJobs] = useState<DownloadJob[]>([]);

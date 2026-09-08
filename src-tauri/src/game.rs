@@ -147,7 +147,39 @@ fn install_path(handle: &AppHandle, app_name: &str) -> Option<String> {
         .map(|path| path.to_lowercase())
 }
 
-fn running(system: &mut System, root: &str) -> Vec<sysinfo::Pid> {
+enum Filter {
+    Only(Vec<String>),
+    Without(Vec<String>),
+}
+
+impl Filter {
+    fn allows(&self, exe: &str) -> bool {
+        let name = exe.rsplit(['\\', '/']).next().unwrap_or(exe);
+
+        match self {
+            Filter::Only(names) => names.iter().any(|entry| entry == name),
+            Filter::Without(names) => !names.iter().any(|entry| entry == name),
+        }
+    }
+}
+
+fn filter(handle: &AppHandle, app_name: &str) -> Filter {
+    if crate::library::base_of(handle, app_name).is_none() {
+        return Filter::Without(
+            crate::library::addons_of(handle, app_name)
+                .iter()
+                .flat_map(|addon| crate::library::processes_of(handle, addon))
+                .collect(),
+        );
+    }
+
+    match crate::library::processes_of(handle, app_name) {
+        names if names.is_empty() => Filter::Without(Vec::new()),
+        names => Filter::Only(names),
+    }
+}
+
+fn running(system: &mut System, root: &str, filter: &Filter) -> Vec<sysinfo::Pid> {
     system.refresh_processes(ProcessesToUpdate::All, true);
 
     system
@@ -155,7 +187,7 @@ fn running(system: &mut System, root: &str) -> Vec<sysinfo::Pid> {
         .iter()
         .filter_map(|(pid, process)| {
             let exe = process.exe()?.to_string_lossy().to_lowercase();
-            exe.starts_with(root).then_some(*pid)
+            (exe.starts_with(root) && filter.allows(&exe)).then_some(*pid)
         })
         .collect()
 }
@@ -244,7 +276,7 @@ fn observe(
     });
 }
 
-fn watch(handle: AppHandle, app_name: String, root: String) {
+fn watch(handle: AppHandle, app_name: String, root: String, filter: Filter) {
     tauri::async_runtime::spawn_blocking(move || {
         let mut system = System::new();
         let mut seen = false;
@@ -253,7 +285,7 @@ fn watch(handle: AppHandle, app_name: String, root: String) {
         loop {
             std::thread::sleep(POLL);
 
-            let live = !running(&mut system, &root).is_empty();
+            let live = !running(&mut system, &root, &filter).is_empty();
 
             if live && !seen {
                 seen = true;
@@ -374,7 +406,9 @@ pub async fn game_launch(handle: AppHandle, app_name: String) -> Result<()> {
         return Ok(());
     };
 
-    watch(handle.clone(), app_name, root);
+    let filter = filter(&handle, &app_name);
+
+    watch(handle.clone(), app_name, root, filter);
     Ok(())
 }
 
@@ -391,13 +425,14 @@ pub async fn game_stop(handle: AppHandle, app_name: String) -> Result<()> {
     }
 
     if let Some(root) = install_path(&handle, &app_name) {
+        let filter = filter(&handle, &app_name);
         let handle = handle.clone();
         let app_name = app_name.clone();
 
         tauri::async_runtime::spawn_blocking(move || {
             let mut system = System::new();
 
-            for pid in running(&mut system, &root) {
+            for pid in running(&mut system, &root, &filter) {
                 if let Some(process) = system.process(pid) {
                     process.kill();
                 }
