@@ -21,6 +21,7 @@ import { useFriends } from "@hooks/useFriends";
 import { useGames } from "@hooks/useGames";
 import { useLibrary } from "@hooks/useLibrary";
 import { useLockers } from "@hooks/useLockers";
+import { useUpdate } from "@hooks/useUpdate";
 import { installOptions } from "@lib/install";
 import { createShortcut, refreshLibrary, uninstallGame } from "@lib/library";
 import { watchTray } from "@lib/tray";
@@ -29,7 +30,8 @@ import "./MainWindow.css";
 
 const toRailGroup = (
   group: TabGroup,
-  badges: Record<string, number>
+  badges: Record<string, number>,
+  alerts: Record<string, boolean>
 ): NavRailGroup => ({
   id: group.id,
   label: group.label,
@@ -37,7 +39,8 @@ const toRailGroup = (
     id,
     label,
     icon,
-    badge: badges[id]
+    badge: badges[id],
+    alert: alerts[id]
   }))
 });
 
@@ -61,6 +64,7 @@ export function MainWindow() {
   const downloads = useDownloads();
   const games = useGames(account);
   const { games: library } = useLibrary(account);
+  const { status: release } = useUpdate();
   const lockers = useLockers(accounts);
   const { session, status: sessionStatus } = useEpicSession(account);
   const friends = useFriends(session);
@@ -206,6 +210,7 @@ export function MainWindow() {
   const current = ALL_TABS.find((tab) => tab.id === active) ?? ALL_TABS[0];
   const View = current.view;
   const badges = { downloads: downloads.pending };
+  const alerts = { settings: Boolean(release?.latest) };
 
   return (
     <div className="window">
@@ -217,8 +222,8 @@ export function MainWindow() {
 
       <div className={`window__body${friendsOpen ? " window__body--veiled" : ""}`}>
         <NavRail
-          groups={TAB_GROUPS.map((group) => toRailGroup(group, badges))}
-          footer={toRailGroup(FOOTER_GROUP, badges)}
+          groups={TAB_GROUPS.map((group) => toRailGroup(group, badges, alerts))}
+          footer={toRailGroup(FOOTER_GROUP, badges, alerts)}
           account={
             account
               ? {

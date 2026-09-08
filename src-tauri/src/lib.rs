@@ -15,6 +15,7 @@ mod profile;
 mod settings;
 mod startup;
 mod tray;
+mod update;
 mod shop;
 mod shortcut;
 mod stream;
@@ -48,6 +49,7 @@ pub fn run() {
         .manage(Pending::default())
         .manage(shop::Shop::default())
         .manage(library::Library::default())
+        .manage(update::Updates::default())
         .manage(profile::Profiles::default())
         .manage(locker::Lockers::default())
         .manage(stream::Streams::default())
@@ -87,6 +89,7 @@ pub fn run() {
             shop::start(handle.clone());
             profile::start(handle.clone());
             locker::start(handle);
+            update::start(handle.clone());
 
             if let Some(main) = handle.get_webview_window(window::MAIN) {
                 let resolved = appearance::resolve(&main, preferred);
@@ -113,6 +116,9 @@ pub fn run() {
             settings::settings_get,
             settings::settings_update,
             tray::tray_action,
+            update::update_status,
+            update::update_check,
+            update::update_install,
             tray::startup_hidden,
             settings::settings_set_install_root,
             shortcut::shortcut_create,

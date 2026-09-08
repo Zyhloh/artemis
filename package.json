@@ -20,7 +20,9 @@
     "@tauri-apps/plugin-dialog": "^2.7.2",
     "@tauri-apps/plugin-http": "^2.5.9",
     "@tauri-apps/plugin-opener": "^2.5.4",
+    "dompurify": "^3.4.15",
     "fnapi-js": "^2.0.6-beta.0",
+    "marked": "^15.0.12",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

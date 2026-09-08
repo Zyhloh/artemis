@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { open } from "@tauri-apps/plugin-dialog";
 import { ContextMenu, type MenuEntry } from "@components/ContextMenu/ContextMenu";
 import { Icon } from "@components/Icon/Icon";
+import { ReleaseNotes } from "@components/ReleaseNotes/ReleaseNotes";
+import { useUpdate } from "@hooks/useUpdate";
 import {
   getSettings,
   setInstallRoot,
@@ -40,6 +42,139 @@ function Switch({
     >
       <span className="settings__knob" />
     </button>
+  );
+}
+
+const ago = (seconds: number | null) => {
+  if (!seconds) return "";
+
+  const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
+
+  if (elapsed < 60) return "just now";
+  if (elapsed < 3600) return `${Math.floor(elapsed / 60)} min ago`;
+
+  return `${Math.floor(elapsed / 3600)} h ago`;
+};
+
+const published = (stamp: string) => {
+  const at = new Date(stamp);
+
+  return Number.isNaN(at.getTime())
+    ? ""
+    : at.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+      });
+};
+
+const megabytes = (bytes: number) => `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+
+function Version() {
+  const { status, phase, install, progress, failure, check, apply } = useUpdate();
+  const latest = status?.latest ?? null;
+  const busy = install === "downloading" || install === "installing";
+
+  let line = "Checking for updates…";
+
+  if (status && !status.checking) {
+    if (latest) line = `Version ${latest.version} is available`;
+    else if (status.error) line = status.error;
+    else line = `Up to date · Checked ${ago(status.checkedAt)}`;
+  }
+
+  if (phase === "checking") line = "Checking for updates…";
+
+  if (install === "downloading" && progress?.total) {
+    line = `Downloading update · ${megabytes(progress.received)} of ${megabytes(progress.total)}`;
+  }
+
+  if (install === "installing") line = "Starting the installer…";
+  if (install === "failed" && failure) line = failure;
+
+  const percent =
+    progress && progress.total > 0
+      ? Math.min(100, Math.round((progress.received / progress.total) * 100))
+      : 0;
+
+  let button: ReactNode;
+
+  if (latest) {
+    button = (
+      <button
+        className="settings__update settings__update--primary"
+        onClick={apply}
+        disabled={busy}
+      >
+        {busy && <span className="settings__spinner settings__spinner--dark" />}
+        {install === "downloading"
+          ? `Downloading ${percent}%`
+          : install === "installing"
+            ? "Installing…"
+            : install === "failed"
+              ? "Retry Update"
+              : `Update to ${latest.version}`}
+      </button>
+    );
+  } else if (phase === "checking") {
+    button = (
+      <button className="settings__update" disabled>
+        <span className="settings__spinner" />
+        Checking…
+      </button>
+    );
+  } else if (phase === "settled") {
+    button = (
+      <button className="settings__update" disabled>
+        <Icon name="check" size={14} strokeWidth={2.2} />
+        No Update Available
+      </button>
+    );
+  } else {
+    button = (
+      <button className="settings__update" onClick={check} disabled={!status}>
+        <Icon name="refresh" size={14} />
+        Check For Updates
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className={`settings__group settings__version${
+        latest ? " settings__version--ready" : ""
+      }`}
+    >
+      <div className="settings__row">
+        <div className="settings__copy">
+          <span className="settings__name">
+            Artemis {status?.current ?? ""}
+            {latest && <span className="settings__tag">Update available</span>}
+          </span>
+          <span className="settings__hint">{line}</span>
+        </div>
+        <div className="settings__control">{button}</div>
+      </div>
+
+      {latest && (
+        <div className="settings__row settings__row--stacked settings__notes">
+          <div className="settings__copy">
+            <span className="settings__name">{latest.title}</span>
+            <span className="settings__hint">
+              {[published(latest.publishedAt), megabytes(latest.size)]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </div>
+          <ReleaseNotes
+            title={latest.title}
+            version={latest.version}
+            notes={latest.notes}
+            url={latest.url}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -142,6 +277,11 @@ export function Settings() {
           Launcher preferences. These apply to Artemis itself, not to any one account.
         </p>
       </header>
+
+      <section className="settings__section">
+        <h2 className="settings__label">Version</h2>
+        <Version />
+      </section>
 
       <section className="settings__section">
         <h2 className="settings__label">General</h2>

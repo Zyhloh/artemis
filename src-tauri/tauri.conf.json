@@ -32,7 +32,7 @@
         "enable": true,
         "scope": ["$CONFIG/Artemis/art/**"]
       },
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: asset: http://asset.localhost https://cdn1.epicgames.com https://cdn2.epicgames.com https://cdn.unrealengine.com https://cdn2.unrealengine.com https://cdn.fn-api.cc; connect-src 'self' ipc: http://ipc.localhost wss://xmpp-service-prod.ol.epicgames.com https://prod.fn-api.cc https://*.epicgames.com https://*.ol.epicgames.com https://*.live.use1a.on.epicgames.com"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: asset: http://asset.localhost https://cdn1.epicgames.com https://cdn2.epicgames.com https://cdn.unrealengine.com https://cdn2.unrealengine.com https://cdn.fn-api.cc https://*.githubusercontent.com https://github.com; connect-src 'self' ipc: http://ipc.localhost wss://xmpp-service-prod.ol.epicgames.com https://prod.fn-api.cc https://*.epicgames.com https://*.ol.epicgames.com https://*.live.use1a.on.epicgames.com"
     }
   },
   "bundle": {
